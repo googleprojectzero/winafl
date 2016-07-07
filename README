@@ -1,0 +1,196 @@
+======
+WinAFL
+======
+
+   Original AFL code written by Michal Zalewski <lcamtuf@google.com>
+
+   Windows fork written and maintained by Ivan Fratric <ifratric@google.com>
+
+   Copyright 2016 Google Inc. All Rights Reserved.
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+
+
+1) Background
+-------------
+
+AFL is a popular fuzzing tool for coverage-guided fuzzing. The tool combines
+fast target execution with clever heuristics to find new execution paths in
+the target binary. It has been successfully used to find a large number of
+vulnerabilities in real products. For more info about the original project,
+please refer to the original documentation at
+
+http://lcamtuf.coredump.cx/afl/
+
+Unfortunately, the original AFL does not work on Windows due to very
+*nix-specific design (e.g. instrumentation, forkserver etc). This project is
+a fork of AFL that uses different instrumentation approach which works on
+Windows even for black box binary fuzzing.
+
+2) The WinAFL approach
+----------------------
+
+Instead of instrumenting the code at compilation time, WinAFL relies on dynamic
+instrumentation using DynamoRIO (http://dynamorio.org/) to measure and extract
+target coverage. This approach has been found to introduce an overhead about 2x
+compared to the native execution speed, which is comparable to the original AFL
+in binary instrumentation mode.
+
+To improve the process startup time, WinAFL relies heavily on persistant
+fuzzing mode, that is, executing multiple input samples without restarting the
+target process. This is accomplished by selecting a target function (that the
+user wants to fuzz) and instrumenting it so that it runs in a loop.
+
+3) Building WinAFL
+------------------
+
+1. Download and build DynamoRio sources or download DynamoRio Windows binary
+package from https://github.com/DynamoRIO/dynamorio/wiki/Downloads 
+
+2. Open Visual Studio Command Prompt (or Visual Studio x64 Win64 Command Prompt
+if you want a 64-bit build). Note that you need a 64-bit winafl.dll build if
+you are fuzzing 64-bit targets and vice versa.
+
+3. Go to the directory containing the source
+
+4. Type the following commands. Modify the -DDynamoRIO_DIR flag to point to the
+location of your DynamoRIO cmake files (relative to the source directory).
+
+For a 32-bit build:
+
+mkdir build32
+cd build32
+cmake .. -DDynamoRIO_DIR=..\path\to\DynamoRIO\cmake
+cmake --build . --config Release
+
+For a 64-bit build:
+
+mkdir build64
+cd build64
+cmake -G"Visual Studio 10 Win64" .. -DDynamoRIO_DIR=..\path\to\DynamoRIO\cmake
+cmake --build . --config Release
+
+4) Using WinAFL
+---------------
+
+The command line for afl-fuzz on Windows is different than on Linux. Instead of
+
+%s [ afl options ] -- [instrumentation options] -- 
+
+it now looks like this
+
+afl-fuzz [afl options] -- [instrumentation options] -- target_cmd_line
+
+The followin afl-fuzz options are supported:
+
+  -i dir        - input directory with test cases
+  -o dir        - output directory for fuzzer findings
+  -D dir        - directory containing DynamoRIO binaries (drrun, drconfig)
+  -t msec       - timeout for each run
+  -f file       - location read by the fuzzed program
+  -M \\ -S id   - distributed mode
+  -x dir        - optional fuzzer dictionary
+
+Please refer to the original AFL documentation for more info on these flags.
+
+The following instrumentation options are used
+
+  -covtype         - the type of coverage being recorded. Supported options are
+                     bb (basic block) or edge (default).
+
+  -coverage_module - module for which to record coverage. Multiple module flags
+                     are supported.
+
+  -target_module   - module which contains the target function to be fuzzed.
+                     Either -target_method or -target_offset need to be
+                     specified together with this option.
+
+  -target_method   - name of the method to fuzz in persistent mode. A symbol
+                     for the method needs to be exported for this to work.
+                     Otherwise use -target_offset instead.
+
+  -target_offset   - offset of the method to fuzz from the start of the module.
+
+  -fuzz_iterations - Maximum nuber of iterations for the target function to run
+                     before restarting the target process.
+
+  -nargs           - Number of arguments the fuzzed method takes. This is used
+                     to save/restore the arguments between runs.
+
+  -debug           - Debug mode. Does not try to connect to the server. Outputs
+                     a log file containing loaded modules, opened files and
+                     coverage infrormation.
+
+  -logdir          - specifies in which directory the log file will be written
+                     (only to be used with -debug).
+
+In general, you should perform the following steps when fuzzing a new target:
+
+0. Make sure your target is running correctly without instrumentations.
+
+1. Open the target binary in WinDbg and locate the function you want to fuzz.
+Note the offset of the function from the start of the module. For example, if
+you want to fuzz the main function and happen to have symbols around, you can
+use the following windbg command:
+
+x test!main
+
+2. Make sure that the target is running correctly under DynamoRIO. For this
+purpose you can use the standalone debug mode of WinAFL client which does not
+require connecting to afl-fuzz. Make sure you use the drrun.exe and winafl.dll
+version which corresponds to your target (32 vs. 64 bit).
+
+Example command line
+
+path\to\DynamoRIO\bin32\drrun.exe -c winafl.dll -debug
+-target_module test_gdiplus.exe -target_offset 0x1270 -fuzz_iterations 10
+-nargs 2 -- test_gdiplus.exe input.bmp
+
+You should see the output corresponding to your target function being run 10
+times after which the target executable will exit. A .log file should be
+created in the current directory. The log file contains useful information
+such as the files and modules loaded by the target as well as the dump of AFL
+coverage map. You should see your input file being opened at least 10 times
+(or more), as afl-fuzz requires that the file is opened for each fuzzing
+iteration. Note the list of loaded modules for setting the -coverage_module
+flag. Note that you must use the same values for module names as seen in the
+log file (case sensitive).
+
+3. Now you should be ready to fuzz the target. First, make sure that both
+afl-fuzz.exe and winafl.dll are in the current directory. As stated earlier,
+the command line for afl-fuzz on Windows is
+
+afl-fuzz [afl options] -- [instrumentation options] -- target_cmd_line
+
+Please refer above for the list of supported AFL and instrumentation options.
+
+In AFL options, you must specify the DynamoRIO binaries directory via the new
+-D option. You need to match the DynamoRIO and winafl.dll build (32 vs. 64 bit)
+to the target binary. -t (timeout) option is mandatory for winafl as execution
+time can vary significantly under instrumentation so it’s not a good idea to
+rely on the auto-determined values.
+
+You can use the same winafl options as in step 2 but remember to exclude the
+-debug flag and you'll probably want to increase the iteration count.
+
+As in afl-fuzz on Linux you can replace the input file param of the target
+binary with @@
+
+An example command line would look like
+
+afl-fuzz.exe -i in -o out -D C:\work\winafl\DynamoRIO\bin64 -t 20000 --
+-coverage_module gdiplus.dll -coverage_module WindowsCodecs.dll
+-fuzz_iterations 5000 -target_module test_gdiplus.exe -target_offset 0x1270
+-nargs 2 -- test_gdiplus.exe @@
+
+That’s it. Happy fuzzing!

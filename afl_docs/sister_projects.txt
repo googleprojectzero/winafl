@@ -1,0 +1,227 @@
+===============
+Sister projects
+===============
+
+  This doc lists some of the projects that are inspired by, derived from,
+  designed for, or meant to integrate with AFL. See README for the general
+  instruction manual.
+
+----------------------------
+Support for other languages:
+----------------------------
+
+Python AFL (Jakub Wilk)
+-----------------------
+
+  Allows fuzz-testing of Python programs. Uses custom instrumentation and its
+  own forkserver.
+
+  http://jwilk.net/software/python-afl
+
+Go-fuzz (Dmitry Vyukov)
+-----------------------
+
+  AFL-inspired guided fuzzing approach for Go targets:
+
+  https://github.com/dvyukov/go-fuzz
+
+afl.rs (Keegan McAllister)
+--------------------------
+
+  Allows Rust features to be easily fuzzed with AFL (using the LLVM mode).
+
+  https://github.com/kmcallister/afl.rs
+
+AFL for GCJ Java and other GCC frontends (-)
+--------------------------------------------
+
+  GCC Java programs are actually supported out of the box - simply rename
+  afl-gcc to afl-gcj. Unfortunately, by default, unhandled exceptions in GCJ do
+  not result in abort() being called, so you will need to manually add a
+  top-level exception handler that exits with SIGABRT or something equivalent.
+
+  Other GCC-supported languages should be fairly easy to get working, but may
+  face similar problems. See https://gcc.gnu.org/frontends.html for a list of
+  options.
+
+AFL-style in-process fuzzer for LLVM (Kostya Serebryany)
+--------------------------------------------------------
+
+  Provides an evolutionary instrumentation-guided fuzzing harness that allows
+  some programs to be fuzzed without the fork / execve overhead. (Similar
+  functionality is now available as the "persistent" feature described in
+  ../llvm_mode/README.llvm.)
+
+  http://llvm.org/docs/LibFuzzer.html
+
+AFL fixup shim (Ben Nagy)
+-------------------------
+
+  Allows AFL_POST_LIBRARY postprocessors to be written in arbitrary languages
+  that don't have C / .so bindings. Includes examples in Go.
+
+  https://github.com/bnagy/aflfix
+
+----------------
+Network fuzzing:
+----------------
+
+Preeny (Yan Shoshitaishvili)
+----------------------------
+
+  Provides a fairly simple way to convince dynamically linked network-centric
+  programs to read from a file or not fork. Not AFL-specific, but described as
+  useful by many users. Some assembly required.
+
+  https://github.com/zardus/preeny
+
+-------------------------------------------
+Distributed fuzzing and related automation:
+-------------------------------------------
+
+roving (Richo Healey)
+---------------------
+
+  A client-server architecture for effortlessly orchestrating AFL runs across
+  a fleet of machines. You don't want to use this on systems that face the
+  Internet or live in other untrusted environments.
+
+  https://github.com/richo/roving
+
+Distfuzz-AFL (Martijn Bogaard)
+------------------------------
+
+  Simplifies the management of afl-fuzz instances on remote machines. The
+  author notes that the current implementation isn't secure and should not
+  be exposed on the Internet.
+
+  https://github.com/MartijnB/disfuzz-afl
+
+afl-launch (Ben Nagy)
+---------------------
+
+  Batch AFL launcher utility with a simple CLI.
+
+  https://github.com/bnagy/afl-launch
+
+AFL Utils (rc0r)
+----------------
+
+  Simplifies the triage of discovered crashes, start parallel instances, etc.
+
+  https://github.com/rc0r/afl-utils
+
+afl-fuzzing-scripts (Tobias Ospelt)
+-----------------------------------
+
+  Simplifies starting up multiple parallel AFL jobs.
+
+  https://github.com/floyd-fuh/afl-fuzzing-scripts/
+
+afl-sid (Jacek Wielemborek)
+---------------------------
+
+  Allows users to more conveniently build and deploy AFL via Docker.
+
+  https://github.com/d33tah/afl-sid
+
+-------------------------------------
+Crash triage, coverage analysis, etc:
+-------------------------------------
+
+afl-crash-analyzer (Tobias Ospelt)
+----------------------------------
+
+  Makes it easier to navigate and annotate crashing test cases.
+
+  https://github.com/floyd-fuh/afl-crash-analyzer/
+
+Crashwalk (Ben Nagy)
+--------------------
+
+  AFL-aware tool to annotate and sort through crashing test cases.
+
+  https://github.com/bnagy/crashwalk
+
+afl-cov (Michael Rash)
+----------------------
+
+  Produces human-readable coverage data based on the output queue of afl-fuzz.
+
+  https://github.com/mrash/afl-cov
+
+RecidiVM (Jakub Wilk)
+---------------------
+
+  Makes it easy to estimate memory usage limits when fuzzing with ASAN or MSAN.
+
+  http://jwilk.net/software/recidivm
+
+-------------------------------
+Narrow-purpose or experimental:
+-------------------------------
+
+Pause and resume scripts (Ben Nagy)
+-----------------------------------
+
+  Simple automation to suspend and resume groups of fuzzing jobs.
+
+  https://gist.github.com/bnagy/8f0eb29eb125653f73fd
+
+Static binary-only instrumentation (Aleksandar Nikolich)
+--------------------------------------------------------
+
+  Allows black-box binaries to be instrumented statically (i.e., by modifying
+  the binary ahead of the time, rather than translating it on the run). Author
+  reports better performance compared to QEMU, but occasional translation
+  errors with stripped binaries.
+
+  https://github.com/vrtadmin/moflow/tree/master/afl-dyninst
+
+AFL PIN (Parker Thompson)
+-------------------------
+
+  Early-stage Intel PIN instrumentation support (from before we settled on
+  faster-running QEMU).
+
+  https://github.com/mothran/aflpin
+
+AFL-style instrumentation in llvm (Kostya Serebryany)
+-----------------------------------------------------
+
+  Allows AFL-equivalent instrumentation to be injected at compiler level.
+  This is currently not supported by AFL as-is, but may be useful in other
+  projects.
+
+  https://code.google.com/p/address-sanitizer/wiki/AsanCoverage#Coverage_counters
+
+AFL JS (Han Choongwoo)
+----------------------
+
+  One-off optimizations to speed up the fuzzing of JavaScriptCore (now likely
+  superseded by LLVM deferred forkserver init - see llvm_mode/README.llvm).
+
+  https://github.com/tunz/afl-fuzz-js
+
+AFL harness for fwknop (Michael Rash)
+-------------------------------------
+
+  An example of a fairly involved integration with AFL.
+
+  https://github.com/mrash/fwknop/tree/master/test/afl
+
+Building harnesses for DNS servers (Jonathan Foote, Ron Bowes)
+--------------------------------------------------------------
+
+  Two articles outlining the general principles and showing some example code.
+
+  https://www.fastly.com/blog/how-to-fuzz-server-american-fuzzy-lop
+  https://goo.gl/j9EgFf
+
+Fuzzer shell for SQLite (Richard Hipp)
+--------------------------------------
+
+  A simple SQL shell designed specifically for fuzzing the underlying library.
+
+  http://www.sqlite.org/src/artifact/9e7e273da2030371
+
