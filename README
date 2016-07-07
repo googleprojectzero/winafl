@@ -152,7 +152,7 @@ version which corresponds to your target (32 vs. 64 bit).
 
 Example command line
 
-path\to\DynamoRIO\bin32\drrun.exe -c winafl.dll -debug
+path\to\DynamoRIO\bin64\drrun.exe -c winafl.dll -debug
 -target_module test_gdiplus.exe -target_offset 0x1270 -fuzz_iterations 10
 -nargs 2 -- test_gdiplus.exe input.bmp
 
@@ -177,7 +177,7 @@ Please refer above for the list of supported AFL and instrumentation options.
 In AFL options, you must specify the DynamoRIO binaries directory via the new
 -D option. You need to match the DynamoRIO and winafl.dll build (32 vs. 64 bit)
 to the target binary. -t (timeout) option is mandatory for winafl as execution
-time can vary significantly under instrumentation so it’s not a good idea to
+time can vary significantly under instrumentation so itâ€™s not a good idea to
 rely on the auto-determined values.
 
 You can use the same winafl options as in step 2 but remember to exclude the
@@ -193,4 +193,4 @@ afl-fuzz.exe -i in -o out -D C:\work\winafl\DynamoRIO\bin64 -t 20000 --
 -fuzz_iterations 5000 -target_module test_gdiplus.exe -target_offset 0x1270
 -nargs 2 -- test_gdiplus.exe @@
 
-That’s it. Happy fuzzing!
+Thatâ€™s it. Happy fuzzing!
