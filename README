@@ -83,6 +83,11 @@ cmake --build . --config Release
 4) Using WinAFL
 ---------------
 
+Note: If you are using pre-built binaries you'll need to download DynamoRIO
+release 6.1.1-3 from https://github.com/DynamoRIO/dynamorio/wiki/Downloads.
+If you built WinAFL from source, you can use whatever version of DynamoRIO
+you used to build WinAFL.
+
 The command line for afl-fuzz on Windows is different than on Linux. Instead of
 
 %s [ afl options ] -- [instrumentation options] -- 
@@ -193,4 +198,4 @@ afl-fuzz.exe -i in -o out -D C:\work\winafl\DynamoRIO\bin64 -t 20000 --
 -fuzz_iterations 5000 -target_module test_gdiplus.exe -target_offset 0x1270
 -nargs 2 -- test_gdiplus.exe @@
 
-That’s it. Happy fuzzing!
+That’s it. Happy fuzzing! Let me know if you find any bugs with it.
