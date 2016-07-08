@@ -198,4 +198,4 @@ afl-fuzz.exe -i in -o out -D C:\work\winafl\DynamoRIO\bin64 -t 20000 --
 -fuzz_iterations 5000 -target_module test_gdiplus.exe -target_offset 0x1270
 -nargs 2 -- test_gdiplus.exe @@
 
-That’s it. Happy fuzzing! Let me know if you find any bugs with it.
+That’s it. Happy fuzzing! Let me know if you find any bugs.
