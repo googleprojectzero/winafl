@@ -37,6 +37,7 @@
 #include <direct.h>
 
 #define VERSION "1.96b"
+#define WINAFL_VERSION "1.01"
 
 #include "config.h"
 #include "types.h"
@@ -1971,7 +1972,7 @@ static void create_target_process(char** argv) {
     pidfile = alloc_printf("childpid_default.txt", sync_id);
   }
 
-  dr_cmd = alloc_printf("%s\\drrun.exe -pidfile %s -c winafl.dll %s -- %s", dynamorio_dir, pidfile, client_params, target_cmd);
+  dr_cmd = alloc_printf("%s\\drrun.exe -pidfile %s -no_follow_children -c winafl.dll %s -- %s", dynamorio_dir, pidfile, client_params, target_cmd);
 
   ZeroMemory( &si, sizeof(si) );
   si.cb = sizeof(si);
@@ -3598,13 +3599,13 @@ static void show_stats(void) {
 
   /* Let's start by drawing a centered banner. */
 
-  banner_len = (crash_mode ? 24 : 22) + strlen(VERSION) + strlen(use_banner);
+  banner_len = 24 + strlen(VERSION) + strlen(WINAFL_VERSION) + strlen(use_banner);
   banner_pad = (80 - banner_len) / 2;
   memset(tmp, ' ', banner_pad);
 
-  sprintf(tmp + banner_pad, "%s " cLCY VERSION cLGN
-          " (%s)",  crash_mode ? cPIN "peruvian were-rabbit" : 
-          cYEL "american fuzzy lop", use_banner);
+  sprintf(tmp + banner_pad, "WinAFL " WINAFL_VERSION " based on %s "
+          cLCY VERSION cLGN " (%s)",  crash_mode ? cPIN "PWR" : 
+          cYEL "AFL", use_banner);
 
   SAYF("\n%s\n\n", tmp);
 
@@ -7041,7 +7042,8 @@ int main(int argc, char** argv) {
 
   setup_watchdog_timer();
 
-  SAYF(cCYA "afl-fuzz " cBRI VERSION cRST " by <lcamtuf@google.com>\n");
+  SAYF("WinAFL " WINAFL_VERSION " by <ifratric@google.com>\n");
+  SAYF("Based on AFL " cBRI VERSION cRST " by <lcamtuf@google.com>\n");
 
   doc_path = "docs";
 

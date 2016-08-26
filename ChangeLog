@@ -1,0 +1,26 @@
+=========
+ChangeLog
+=========
+
+----------------------------------
+Version 1.01 (based on afl 1.96b):
+----------------------------------
+
+  - Fixed a bug where previous offset wasn't updated in the edge coverage
+    instrumentation mode. This effectively caused edge coverage to behave
+    the same as basic block coverage.
+    Reported by Rodrigo Axel Monroy.
+
+  - Changed the default coverage mode to basic block in order for the default
+    configuration to work better with muti-threaded apps.
+
+  - Added -no_follow_children to DR runtime flags. This can fix problems if the
+    target process creates a child process.
+
+  - More data is now being written to the debug log
+
+----------------------------------
+Version 1.00 (based on afl 1.96b):
+----------------------------------
+
+  - Initial release.
