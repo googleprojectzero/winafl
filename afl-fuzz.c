@@ -37,7 +37,7 @@
 #include <direct.h>
 
 #define VERSION "1.96b"
-#define WINAFL_VERSION "1.01"
+#define WINAFL_VERSION "1.02"
 
 #include "config.h"
 #include "types.h"
@@ -1904,6 +1904,66 @@ static void init_forkserver(char** argv) {
   //not implemented on Windows
 }
 
+//quoting on Windows is weird
+size_t ArgvQuote(char *in, char *out) {
+	int needs_quoting = 0;
+	size_t size = 0;
+	char *p = in;
+	size_t i;
+
+	//check if quoting is necessary
+	if(strchr(in, ' ')) needs_quoting = 1;
+	if(strchr(in, '\"')) needs_quoting = 1;
+	if(strchr(in, '\t')) needs_quoting = 1;
+	if(strchr(in, '\n')) needs_quoting = 1;
+	if(strchr(in, '\v')) needs_quoting = 1;
+	if(!needs_quoting) {
+		size = strlen(in);
+		if(out) memcpy(out, in, size);
+		return size;
+	}
+
+	if(out) out[size] = '\"';
+	size++;
+
+	while(*p) {
+		size_t num_backslashes = 0;
+		while((*p) && (*p == '\\')) {
+			p++;
+			num_backslashes++;
+		}
+
+		if(*p == 0) {
+			for(i = 0; i < (num_backslashes*2); i++) {
+				if(out) out[size] = '\\';
+				size++;
+			}
+			break;
+		} else if(*p == '\"') {
+			for(i = 0; i < (num_backslashes*2 + 1); i++) {
+				if(out) out[size] = '\\';
+				size++;
+			}
+			if(out) out[size] = *p;
+			size++;
+		} else {
+			for(i = 0; i < num_backslashes; i++) {
+				if(out) out[size] = '\\';
+				size++;
+			}
+			if(out) out[size] = *p;
+			size++;
+		}
+
+		p++;
+	}
+
+	if(out) out[size] = '\"';
+	size++;
+
+	return size;
+}
+
 char *argv_to_cmd(char** argv) {
   u32 len = 0, i;
   u8* buf, *ret;
@@ -1911,7 +1971,7 @@ char *argv_to_cmd(char** argv) {
   //todo shell-escape
 
   for (i = 0; argv[i]; i++)
-    len += strlen(argv[i]) + 1;
+    len += ArgvQuote(argv[i], NULL) + 1;
   
   if(!len) FATAL("Error creating command line");
 
@@ -1919,10 +1979,9 @@ char *argv_to_cmd(char** argv) {
 
   for (i = 0; argv[i]; i++) {
 
-    u32 l = strlen(argv[i]);
+    u32 l = ArgvQuote(argv[i], buf);
 
-    memcpy(buf, argv[i], l);
-    buf += l;
+	buf += l;
 
 	*(buf++) = ' ';
   }

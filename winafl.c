@@ -175,12 +175,16 @@ static bool
 onexception(void *drcontext, dr_exception_t *excpt) {
     DWORD num_written;
     DWORD exception_code = excpt->record->ExceptionCode;
+
+    if(options.debug_mode)
+        dr_fprintf(winafl_data.log, "Exception caught: %x\n", exception_code);
+
     if((exception_code == EXCEPTION_ACCESS_VIOLATION) || 
        (exception_code == EXCEPTION_ILLEGAL_INSTRUCTION) ||
        (exception_code == EXCEPTION_PRIV_INSTRUCTION) ||
        (exception_code == EXCEPTION_STACK_OVERFLOW)) {
           if(options.debug_mode)
-            dr_fprintf(winafl_data.log, "crashed");
+            dr_fprintf(winafl_data.log, "crashed\n");
           if(!options.debug_mode)
             WriteFile(pipe, "C", 1, &num_written, NULL);
           dr_exit_process(1);
