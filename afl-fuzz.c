@@ -37,7 +37,7 @@
 #include <direct.h>
 
 #define VERSION "1.96b"
-#define WINAFL_VERSION "1.02"
+#define WINAFL_VERSION "1.03"
 
 #include "config.h"
 #include "types.h"
@@ -1590,13 +1590,6 @@ static void load_extras(u8* dir) {
   u8* x;
   char *pattern;
 
-  if(in_dir[strlen(in_dir)-1] == '\\') {
-    pattern = alloc_printf("%s*", in_dir);
-  } else {
-    pattern = alloc_printf("%s\\*", in_dir);
-  }
-
-
   /* If the name ends with @, extract level and continue. */
 
   if ((x = strchr(dir, '@'))) {
@@ -1608,17 +1601,17 @@ static void load_extras(u8* dir) {
 
   ACTF("Loading extra dictionary from '%s' (level %u)...", dir, dict_level);
 
+  if(in_dir[strlen(dir)-1] == '\\') {
+    pattern = alloc_printf("%s*", dir);
+  } else {
+    pattern = alloc_printf("%s\\*", dir);
+  }
+
   h = FindFirstFile(pattern, &fdata);
 
   if (h == INVALID_HANDLE_VALUE) {
-
-    if (errno == ENOTDIR) {
-      load_extras_file(dir, &min_len, &max_len, dict_level);
-      goto check_and_sort;
-    }
-
-    PFATAL("Unable to open '%s'", dir);
-
+    load_extras_file(dir, &min_len, &max_len, dict_level);
+    goto check_and_sort;
   }
 
   if (x) FATAL("Dictionary levels not supported for directories.");

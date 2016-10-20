@@ -3,6 +3,13 @@ ChangeLog
 =========
 
 ----------------------------------
+Version 1.03 (based on afl 1.96b):
+----------------------------------
+
+  - Fixed dictionary loading.
+	Reported by Hugo Meier.
+
+----------------------------------
 Version 1.02 (based on afl 1.96b):
 ----------------------------------
 
