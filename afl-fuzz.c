@@ -131,6 +131,8 @@ static u8  virgin_bits[MAP_SIZE],     /* Regions yet untouched by fuzzing */
 
 static HANDLE shm_handle;             /* Handle of the SHM region         */
 static HANDLE pipe_handle;            /* Handle of the name pipe          */
+static HANDLE devnul_handle;          /* Handle of the nul device         */
+static u8     sinkhole_stds = 1;      /* Sink-hole stdout/stderr messages?*/
 
 static volatile u8 stop_soon,         /* Ctrl-C pressed?                  */
                    clear_screen = 1,  /* Window resized?                  */
@@ -1991,6 +1993,7 @@ static void create_target_process(char** argv) {
   char *pidfile;
   FILE *fp;
   size_t pidsize;
+  BOOL inherit_handles = TRUE;
 
   STARTUPINFO si;
   PROCESS_INFORMATION pi;
@@ -2030,7 +2033,14 @@ static void create_target_process(char** argv) {
   si.cb = sizeof(si);
   ZeroMemory( &pi, sizeof(pi) );
 
-  if(!CreateProcess(NULL, dr_cmd, NULL, NULL, FALSE, /*CREATE_NO_WINDOW*/0, NULL, NULL, &si, &pi)) {
+  if(sinkhole_stds) {
+    si.hStdOutput = si.hStdError = devnul_handle;
+    si.dwFlags |= STARTF_USESTDHANDLES;
+  } else {
+    inherit_handles = FALSE;
+  }
+
+  if(!CreateProcess(NULL, dr_cmd, NULL, NULL, inherit_handles, /*CREATE_NO_WINDOW*/0, NULL, NULL, &si, &pi)) {
     FATAL("CreateProcess failed, GLE=%d.\n", GetLastError());
   }
 
@@ -2169,6 +2179,21 @@ static u8 run_target(char** argv) {
   char command[] = "F";
   DWORD num_read;
   char result = 0;
+
+  if(sinkhole_stds && devnul_handle == INVALID_HANDLE_VALUE) {
+    devnul_handle = CreateFile(
+        "nul",
+        GENERIC_READ | GENERIC_WRITE,
+        FILE_SHARE_READ | FILE_SHARE_WRITE,
+        NULL,
+        OPEN_EXISTING,
+        0,
+        NULL);
+
+    if(devnul_handle == INVALID_HANDLE_VALUE) {
+      PFATAL("Unable to open the nul device.");
+    }
+  }
 
   if(!is_child_running()) {
     destroy_target_process(0);
@@ -7289,6 +7314,7 @@ int main(int argc, char** argv) {
   if (getenv("AFL_NO_CPU_RED"))    no_cpu_meter_red = 1;
   if (getenv("AFL_NO_VAR_CHECK"))  no_var_check     = 1;
   if (getenv("AFL_SHUFFLE_QUEUE")) shuffle_queue    = 1;
+  if (getenv("AFL_NO_SINKHOLE"))   sinkhole_stds    = 0;
 
   if (dumb_mode == 2 && no_forkserver)
     FATAL("AFL_DUMB_FORKSRV and AFL_NO_FORKSRV are mutually exclusive");
@@ -7307,6 +7333,8 @@ int main(int argc, char** argv) {
   setup_shm();
   child_handle = NULL;
   pipe_handle = NULL;
+
+  devnul_handle = INVALID_HANDLE_VALUE;
 
   setup_dirs_fds();
   read_testcases();
@@ -7423,6 +7451,10 @@ stop_fuzzing:
            "Stopped during the first cycle, results may be incomplete.\n"
            "    (For info on resuming, see %s\\README.)\n", doc_path);
 
+  }
+
+  if(devnul_handle != INVALID_HANDLE_VALUE) {
+    CloseHandle(devnul_handle);
   }
 
   fclose(plot_file);
