@@ -131,6 +131,8 @@ static u8  virgin_bits[MAP_SIZE],     /* Regions yet untouched by fuzzing */
 
 static HANDLE shm_handle;             /* Handle of the SHM region         */
 static HANDLE pipe_handle;            /* Handle of the name pipe          */
+static char   *fuzzer_id = NULL;      /* The fuzzer ID or a randomized 
+                                         seed allowing multiple instances */
 
 static volatile u8 stop_soon,         /* Ctrl-C pressed?                  */
                    clear_screen = 1,  /* Window resized?                  */
@@ -1224,37 +1226,71 @@ static void cull_queue(void) {
 static void setup_shm(void) {
 
   char* shm_str;
+  unsigned int seeds[2];
+  u64 name_seed;
+  u8 attempts = 0;
 
   if (!in_bitmap) memset(virgin_bits, 255, MAP_SIZE);
 
   memset(virgin_hang, 255, MAP_SIZE);
   memset(virgin_crash, 255, MAP_SIZE);
 
-  if(sync_id) {
-	  shm_str = (char *)alloc_printf("afl_shm_%s", sync_id);
-  } else {
-	  shm_str = (char *)alloc_printf("afl_shm_default");
+  while(attempts < 5) {
+    if(fuzzer_id == NULL) {
+      // If it is null, it means we have to generate a random seed to name the instance
+      rand_s(&seeds[0]);
+      rand_s(&seeds[1]);
+      name_seed = ((u64)seeds[0] << 32) | seeds[1];
+      fuzzer_id = (char *)alloc_printf("%I64x", name_seed);
+    }
+
+    shm_str = (char *)alloc_printf("afl_shm_%s", fuzzer_id);
+
+    shm_handle = CreateFileMapping(
+                   INVALID_HANDLE_VALUE,    // use paging file
+                   NULL,                    // default security
+                   PAGE_READWRITE,          // read/write access
+                   0,                       // maximum object size (high-order DWORD)
+                   MAP_SIZE,                // maximum object size (low-order DWORD)
+                   (char *)shm_str);        // name of mapping object
+
+    if(shm_handle == NULL) {
+      if(sync_id) {
+        PFATAL("CreateFileMapping failed (check slave id)");
+      }
+
+      if(GetLastError() == ERROR_ALREADY_EXISTS) {
+        // We need another attempt to find a unique section name
+        attempts++;
+        ck_free(shm_str);
+        ck_free(fuzzer_id);
+        fuzzer_id = NULL;
+        continue;
+      }
+      else {
+        PFATAL("CreateFileMapping failed");
+      }
+    }
+
+    // We found a section name that works!
+    break;
   }
 
-  shm_handle = CreateFileMapping(
-                 INVALID_HANDLE_VALUE,    // use paging file
-                 NULL,                    // default security
-                 PAGE_READWRITE,          // read/write access
-                 0,                       // maximum object size (high-order DWORD)
-                 MAP_SIZE,                // maximum object size (low-order DWORD)
-                 (char *)shm_str);                 // name of mapping object
-
-  if (shm_handle == NULL) PFATAL("shmget() failed");
+  if(attempts == 5) {
+    FATAL("Could not find a section name.\n");
+  }
 
   atexit(remove_shm);
 
   ck_free(shm_str);
 
-  trace_bits = (u8 *)MapViewOfFile(shm_handle,   // handle to map object
-                        FILE_MAP_ALL_ACCESS, // read/write permission
-                        0,
-                        0,
-                        MAP_SIZE);
+  trace_bits = (u8 *)MapViewOfFile(
+    shm_handle,          // handle to map object
+    FILE_MAP_ALL_ACCESS, // read/write permission
+    0,
+    0,
+    MAP_SIZE
+  );
 
   if (!trace_bits) PFATAL("shmat() failed");
 
@@ -1995,36 +2031,30 @@ static void create_target_process(char** argv) {
   STARTUPINFO si;
   PROCESS_INFORMATION pi;
 
-  if(sync_id) {
-	  pipe_name = (char *)alloc_printf("\\\\.\\pipe\\afl_pipe_%s", sync_id);
-  } else {
-	  pipe_name = (char *)alloc_printf("\\\\.\\pipe\\afl_pipe_default");
-  }
+  pipe_name = (char *)alloc_printf("\\\\.\\pipe\\afl_pipe_%s", fuzzer_id);
 
-  pipe_handle = CreateNamedPipe( 
-          pipe_name,             // pipe name 
-          PIPE_ACCESS_DUPLEX,       // read/write access 
-          0,
-		  1, // max. instances  
-          512,                  // output buffer size 
-          512,                  // input buffer size 
-          20000,                    // client time-out 
-          NULL);                    // default security attribute 
+  pipe_handle = CreateNamedPipe(
+    pipe_name,                // pipe name
+    PIPE_ACCESS_DUPLEX,       // read/write access
+    0,
+    1,                        // max. instances
+    512,                      // output buffer size
+    512,                      // input buffer size
+    20000,                    // client time-out
+    NULL);                    // default security attribute
 
-  if (pipe_handle == INVALID_HANDLE_VALUE) 
+  if (pipe_handle == INVALID_HANDLE_VALUE)
   {
       FATAL("CreateNamedPipe failed, GLE=%d.\n", GetLastError());
   }
 
   target_cmd = argv_to_cmd(argv);
 
-  if(sync_id) {
-    pidfile = alloc_printf("childpid_%s.txt", sync_id);
-  } else {
-    pidfile = alloc_printf("childpid_default.txt", sync_id);
-  }
-
-  dr_cmd = alloc_printf("%s\\drrun.exe -pidfile %s -no_follow_children -c winafl.dll %s -- %s", dynamorio_dir, pidfile, client_params, target_cmd);
+  pidfile = alloc_printf("childpid_%s.txt", fuzzer_id);
+  dr_cmd = alloc_printf(
+    "%s\\drrun.exe -pidfile %s -no_follow_children -c winafl.dll %s -fuzzer_id %s -- %s",
+    dynamorio_dir, pidfile, client_params, fuzzer_id, target_cmd
+  );
 
   ZeroMemory( &si, sizeof(si) );
   si.cb = sizeof(si);
@@ -2041,9 +2071,9 @@ static void create_target_process(char** argv) {
   watchdog_enabled = 1;
 
   if(!ConnectNamedPipe(pipe_handle, NULL)) {
-	  if(GetLastError() != ERROR_PIPE_CONNECTED) {
+    if(GetLastError() != ERROR_PIPE_CONNECTED) {
         FATAL("ConnectNamedPipe failed, GLE=%d.\n", GetLastError());
-	  }
+    }
   }
 
   watchdog_enabled = 0;
@@ -6981,17 +7011,13 @@ static void extract_client_params(u32 argc, char** argv) {
   opt_start = optind;
 
   for (i = optind; i < argc; i++) {
-	if(strcmp(argv[i],"--") == 0) break;
+    if(strcmp(argv[i],"--") == 0) break;
     nclientargs++;
     len += strlen(argv[i]) + 1;
   }
 
   if(i == argc) usage(argv[0]);
   opt_end = i;
-
-  if(sync_id) {
-    len += strlen("-fuzzer_id") + strlen(sync_id) + 2;
-  }
 
   buf = client_params = ck_alloc(len);
 
@@ -7005,13 +7031,8 @@ static void extract_client_params(u32 argc, char** argv) {
     *(buf++) = ' ';
   }
 
-  if(sync_id) {
-	  memcpy(buf, "-fuzzer_id ", strlen("-fuzzer_id "));
-	  buf += strlen("-fuzzer_id ");
-	  memcpy(buf, sync_id, strlen(sync_id));
-	  buf += strlen(sync_id);
-  } else if(buf != client_params) {
-	  buf--;
+  if(buf != client_params) {
+    buf--;
   }
 
   *buf = 0;
@@ -7021,9 +7042,9 @@ static void extract_client_params(u32 argc, char** argv) {
   //extract the number of fuzz iterations from client params
   fuzz_iterations_max = 1000;
   for (i = opt_start; i < opt_end; i++) {
-	  if((strcmp(argv[i], "-fuzz_iterations") == 0) && ((i + 1) < opt_end)) {
-		  fuzz_iterations_max = atoi(argv[i+1]);
-	  }
+    if((strcmp(argv[i], "-fuzz_iterations") == 0) && ((i + 1) < opt_end)) {
+      fuzz_iterations_max = atoi(argv[i+1]);
+    }
   }
 
 }
@@ -7140,6 +7161,7 @@ int main(int argc, char** argv) {
 
         if (sync_id) FATAL("Multiple -S or -M options not supported");
         sync_id = optarg;
+        fuzzer_id = sync_id;
         break;
 
       case 'f': /* target file */
@@ -7429,6 +7451,9 @@ stop_fuzzing:
   destroy_queue();
   destroy_extras();
   ck_free(target_path);
+
+  if(fuzzer_id != NULL && fuzzer_id != sync_id)
+    ck_free(fuzzer_id);
 
   alloc_report();
 
