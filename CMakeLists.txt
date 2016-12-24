@@ -16,6 +16,12 @@ add_executable(test_gdiplus
 
 target_link_libraries(test_gdiplus gdiplus)
 
+project(afl-showmap)
+
+add_executable(afl-showmap
+  afl-showmap.c
+  )
+
 
 project(afl-fuzz)
 
