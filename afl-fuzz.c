@@ -7099,32 +7099,33 @@ static void extract_client_params(u32 argc, char** argv) {
 
 
 int getopt(int argc, char **argv, char *optstring) {
-	char *c;
+  char *c;
 
-	optarg = NULL;
+  optarg = NULL;
 
-	while(1) {
-		if(optind == argc) return -1;
-		if(strcmp(argv[optind], "--") == 0) return -1;
-		if(argv[optind][0] != '-') {
-			optind++;
-			continue;
-		}
-		if(!argv[optind][1]) {
-			optind++;
-			continue;
-		}
+  while(1) {
+    if(optind == argc) return -1;
+    if(strcmp(argv[optind], "--") == 0) return -1;
+    if(argv[optind][0] != '-') {
+      optind++;
+      continue;
+    }
+    if(!argv[optind][1]) {
+      optind++;
+      continue;
+    }
 
-		c = strchr(optstring, argv[optind][1]);
-		if(!c) return -1;
-		if(c[1] == ':') {
-			if((optind+1) == argc) return -1;
-			optarg = argv[optind+1];
-			optind+=2;
-		}
+    c = strchr(optstring, argv[optind][1]);
+    if(!c) return -1;
+    optind++;
+    if(c[1] == ':') {
+      if(optind == argc) return -1;
+      optarg = argv[optind];
+      optind++;
+    }
 
-		return (int)(c[0]);
-	}
+    return (int)(c[0]);
+  }
 }
 
 /* Main entry point */
