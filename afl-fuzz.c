@@ -2101,6 +2101,7 @@ static void create_target_process(char** argv) {
   fread(buf, pidsize, 1, fp);
   buf[pidsize] = 0;
   fclose(fp);
+  remove(pidfile);
 
   child_pid = atoi(buf);
 
