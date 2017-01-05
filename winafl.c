@@ -197,6 +197,7 @@ static dr_emit_flags_t
 instrument_bb_coverage(void *drcontext, void *tag, instrlist_t *bb, instr_t *inst,
                       bool for_trace, bool translating, void *user_data)
 {
+    static bool debug_information_output = false;
     app_pc start_pc;
     module_entry_t **mod_entry_cache;
     module_entry_t *mod_entry;
@@ -222,8 +223,12 @@ instrument_bb_coverage(void *drcontext, void *tag, instrlist_t *bb, instr_t *ins
     should_instrument = false;
     target_modules = options.target_modules;
     while(target_modules) {
-        if(strcmp(module_name, target_modules->module_name) == 0) {
+        if(_stricmp(module_name, target_modules->module_name) == 0) {
             should_instrument = true;
+            if(options.debug_mode && debug_information_output == false) {
+                dr_fprintf(winafl_data.log, "Instrumenting %s with the 'bb' mode\n", module_name);
+                debug_information_output = true;
+            }
             break;
         }
         target_modules = target_modules->next;
@@ -248,6 +253,7 @@ static dr_emit_flags_t
 instrument_edge_coverage(void *drcontext, void *tag, instrlist_t *bb, instr_t *inst,
                       bool for_trace, bool translating, void *user_data)
 {
+    static bool debug_information_output = false;
     app_pc start_pc;
     module_entry_t **mod_entry_cache;
     module_entry_t *mod_entry;
@@ -279,8 +285,12 @@ instrument_edge_coverage(void *drcontext, void *tag, instrlist_t *bb, instr_t *i
     should_instrument = false;
     target_modules = options.target_modules;
     while(target_modules) {
-        if(strcmp(module_name, target_modules->module_name) == 0) {
+        if(_stricmp(module_name, target_modules->module_name) == 0) {
             should_instrument = true;
+            if(options.debug_mode && debug_information_output == false) {
+                dr_fprintf(winafl_data.log, "Instrumenting %s with the 'edge' mode\n", module_name);
+                debug_information_output = true;
+            }
             break;
         }
         target_modules = target_modules->next;
