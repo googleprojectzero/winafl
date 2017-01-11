@@ -3,6 +3,18 @@ ChangeLog
 =========
 
 ----------------------------------
+Version 1.04 (based on afl 1.96b):
+----------------------------------
+
+  Various fixes / improvements contributed by Axel "0vercl0k" Souchet:
+  - Mute stdout/stderr unless AFL_NO_SINKHOLE env variable is set.
+  - Allow several slaveless instances to be run on the same machine.
+  - Fix getopt to properly handle options without parameters.
+  - Automatically remove the child pid file.
+  - Case insensitive module name comparison.
+  - More debugging messages.
+
+----------------------------------
 Version 1.03 (based on afl 1.96b):
 ----------------------------------
 

@@ -169,7 +169,7 @@ coverage map. In the log you should see pre_fuzz_handler and post_fuzz_handler
 being run exactly 10 times as well as your input file being open in each
 iteration. Note the list of loaded modules for setting the -coverage_module
 flag. Note that you must use the same values for module names as seen in the
-log file (case sensitive).
+log file (not case sensitive).
 
 3. Now you should be ready to fuzz the target. First, make sure that both
 afl-fuzz.exe and winafl.dll are in the current directory. As stated earlier,
