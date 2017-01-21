@@ -37,6 +37,7 @@
 #include <direct.h>
 
 #define VERSION "1.96b"
+#define WINAFL_VERSION "1.04"
 
 #include "config.h"
 #include "types.h"
@@ -130,6 +131,10 @@ static u8  virgin_bits[MAP_SIZE],     /* Regions yet untouched by fuzzing */
 
 static HANDLE shm_handle;             /* Handle of the SHM region         */
 static HANDLE pipe_handle;            /* Handle of the name pipe          */
+static char   *fuzzer_id = NULL;      /* The fuzzer ID or a randomized 
+                                         seed allowing multiple instances */
+static HANDLE devnul_handle;          /* Handle of the nul device         */
+static u8     sinkhole_stds = 1;      /* Sink-hole stdout/stderr messages?*/
 
 static volatile u8 stop_soon,         /* Ctrl-C pressed?                  */
                    clear_screen = 1,  /* Window resized?                  */
@@ -1223,37 +1228,71 @@ static void cull_queue(void) {
 static void setup_shm(void) {
 
   char* shm_str;
+  unsigned int seeds[2];
+  u64 name_seed;
+  u8 attempts = 0;
 
   if (!in_bitmap) memset(virgin_bits, 255, MAP_SIZE);
 
   memset(virgin_hang, 255, MAP_SIZE);
   memset(virgin_crash, 255, MAP_SIZE);
 
-  if(sync_id) {
-	  shm_str = (char *)alloc_printf("afl_shm_%s", sync_id);
-  } else {
-	  shm_str = (char *)alloc_printf("afl_shm_default");
+  while(attempts < 5) {
+    if(fuzzer_id == NULL) {
+      // If it is null, it means we have to generate a random seed to name the instance
+      rand_s(&seeds[0]);
+      rand_s(&seeds[1]);
+      name_seed = ((u64)seeds[0] << 32) | seeds[1];
+      fuzzer_id = (char *)alloc_printf("%I64x", name_seed);
+    }
+
+    shm_str = (char *)alloc_printf("afl_shm_%s", fuzzer_id);
+
+    shm_handle = CreateFileMapping(
+                   INVALID_HANDLE_VALUE,    // use paging file
+                   NULL,                    // default security
+                   PAGE_READWRITE,          // read/write access
+                   0,                       // maximum object size (high-order DWORD)
+                   MAP_SIZE,                // maximum object size (low-order DWORD)
+                   (char *)shm_str);        // name of mapping object
+
+    if(shm_handle == NULL) {
+      if(sync_id) {
+        PFATAL("CreateFileMapping failed (check slave id)");
+      }
+
+      if(GetLastError() == ERROR_ALREADY_EXISTS) {
+        // We need another attempt to find a unique section name
+        attempts++;
+        ck_free(shm_str);
+        ck_free(fuzzer_id);
+        fuzzer_id = NULL;
+        continue;
+      }
+      else {
+        PFATAL("CreateFileMapping failed");
+      }
+    }
+
+    // We found a section name that works!
+    break;
   }
 
-  shm_handle = CreateFileMapping(
-                 INVALID_HANDLE_VALUE,    // use paging file
-                 NULL,                    // default security
-                 PAGE_READWRITE,          // read/write access
-                 0,                       // maximum object size (high-order DWORD)
-                 MAP_SIZE,                // maximum object size (low-order DWORD)
-                 (char *)shm_str);                 // name of mapping object
-
-  if (shm_handle == NULL) PFATAL("shmget() failed");
+  if(attempts == 5) {
+    FATAL("Could not find a section name.\n");
+  }
 
   atexit(remove_shm);
 
   ck_free(shm_str);
 
-  trace_bits = (u8 *)MapViewOfFile(shm_handle,   // handle to map object
-                        FILE_MAP_ALL_ACCESS, // read/write permission
-                        0,
-                        0,
-                        MAP_SIZE);
+  trace_bits = (u8 *)MapViewOfFile(
+    shm_handle,          // handle to map object
+    FILE_MAP_ALL_ACCESS, // read/write permission
+    0,
+    0,
+    MAP_SIZE
+  );
 
   if (!trace_bits) PFATAL("shmat() failed");
 
@@ -1589,13 +1628,6 @@ static void load_extras(u8* dir) {
   u8* x;
   char *pattern;
 
-  if(in_dir[strlen(in_dir)-1] == '\\') {
-    pattern = alloc_printf("%s*", in_dir);
-  } else {
-    pattern = alloc_printf("%s\\*", in_dir);
-  }
-
-
   /* If the name ends with @, extract level and continue. */
 
   if ((x = strchr(dir, '@'))) {
@@ -1607,17 +1639,17 @@ static void load_extras(u8* dir) {
 
   ACTF("Loading extra dictionary from '%s' (level %u)...", dir, dict_level);
 
+  if(in_dir[strlen(dir)-1] == '\\') {
+    pattern = alloc_printf("%s*", dir);
+  } else {
+    pattern = alloc_printf("%s\\*", dir);
+  }
+
   h = FindFirstFile(pattern, &fdata);
 
   if (h == INVALID_HANDLE_VALUE) {
-
-    if (errno == ENOTDIR) {
-      load_extras_file(dir, &min_len, &max_len, dict_level);
-      goto check_and_sort;
-    }
-
-    PFATAL("Unable to open '%s'", dir);
-
+    load_extras_file(dir, &min_len, &max_len, dict_level);
+    goto check_and_sort;
   }
 
   if (x) FATAL("Dictionary levels not supported for directories.");
@@ -1903,6 +1935,66 @@ static void init_forkserver(char** argv) {
   //not implemented on Windows
 }
 
+//quoting on Windows is weird
+size_t ArgvQuote(char *in, char *out) {
+	int needs_quoting = 0;
+	size_t size = 0;
+	char *p = in;
+	size_t i;
+
+	//check if quoting is necessary
+	if(strchr(in, ' ')) needs_quoting = 1;
+	if(strchr(in, '\"')) needs_quoting = 1;
+	if(strchr(in, '\t')) needs_quoting = 1;
+	if(strchr(in, '\n')) needs_quoting = 1;
+	if(strchr(in, '\v')) needs_quoting = 1;
+	if(!needs_quoting) {
+		size = strlen(in);
+		if(out) memcpy(out, in, size);
+		return size;
+	}
+
+	if(out) out[size] = '\"';
+	size++;
+
+	while(*p) {
+		size_t num_backslashes = 0;
+		while((*p) && (*p == '\\')) {
+			p++;
+			num_backslashes++;
+		}
+
+		if(*p == 0) {
+			for(i = 0; i < (num_backslashes*2); i++) {
+				if(out) out[size] = '\\';
+				size++;
+			}
+			break;
+		} else if(*p == '\"') {
+			for(i = 0; i < (num_backslashes*2 + 1); i++) {
+				if(out) out[size] = '\\';
+				size++;
+			}
+			if(out) out[size] = *p;
+			size++;
+		} else {
+			for(i = 0; i < num_backslashes; i++) {
+				if(out) out[size] = '\\';
+				size++;
+			}
+			if(out) out[size] = *p;
+			size++;
+		}
+
+		p++;
+	}
+
+	if(out) out[size] = '\"';
+	size++;
+
+	return size;
+}
+
 char *argv_to_cmd(char** argv) {
   u32 len = 0, i;
   u8* buf, *ret;
@@ -1910,7 +2002,7 @@ char *argv_to_cmd(char** argv) {
   //todo shell-escape
 
   for (i = 0; argv[i]; i++)
-    len += strlen(argv[i]) + 1;
+    len += ArgvQuote(argv[i], NULL) + 1;
   
   if(!len) FATAL("Error creating command line");
 
@@ -1918,10 +2010,9 @@ char *argv_to_cmd(char** argv) {
 
   for (i = 0; argv[i]; i++) {
 
-    u32 l = strlen(argv[i]);
+    u32 l = ArgvQuote(argv[i], buf);
 
-    memcpy(buf, argv[i], l);
-    buf += l;
+	buf += l;
 
 	*(buf++) = ' ';
   }
@@ -1938,46 +2029,48 @@ static void create_target_process(char** argv) {
   char *pidfile;
   FILE *fp;
   size_t pidsize;
+  BOOL inherit_handles = TRUE;
 
   STARTUPINFO si;
   PROCESS_INFORMATION pi;
 
-  if(sync_id) {
-	  pipe_name = (char *)alloc_printf("\\\\.\\pipe\\afl_pipe_%s", sync_id);
-  } else {
-	  pipe_name = (char *)alloc_printf("\\\\.\\pipe\\afl_pipe_default");
-  }
+  pipe_name = (char *)alloc_printf("\\\\.\\pipe\\afl_pipe_%s", fuzzer_id);
 
-  pipe_handle = CreateNamedPipe( 
-          pipe_name,             // pipe name 
-          PIPE_ACCESS_DUPLEX,       // read/write access 
-          0,
-		  1, // max. instances  
-          512,                  // output buffer size 
-          512,                  // input buffer size 
-          20000,                    // client time-out 
-          NULL);                    // default security attribute 
+  pipe_handle = CreateNamedPipe(
+    pipe_name,                // pipe name
+    PIPE_ACCESS_DUPLEX,       // read/write access
+    0,
+    1,                        // max. instances
+    512,                      // output buffer size
+    512,                      // input buffer size
+    20000,                    // client time-out
+    NULL);                    // default security attribute
 
-  if (pipe_handle == INVALID_HANDLE_VALUE) 
+  if (pipe_handle == INVALID_HANDLE_VALUE)
   {
       FATAL("CreateNamedPipe failed, GLE=%d.\n", GetLastError());
   }
 
   target_cmd = argv_to_cmd(argv);
 
-  if(sync_id) {
-    pidfile = alloc_printf("childpid_%s.txt", sync_id);
-  } else {
-    pidfile = alloc_printf("childpid_default.txt", sync_id);
-  }
-
-  dr_cmd = alloc_printf("%s\\drrun.exe -pidfile %s -c winafl.dll %s -- %s", dynamorio_dir, pidfile, client_params, target_cmd);
+  pidfile = alloc_printf("childpid_%s.txt", fuzzer_id);
+  dr_cmd = alloc_printf(
+    "%s\\drrun.exe -pidfile %s -no_follow_children -c winafl.dll %s -fuzzer_id %s -- %s",
+    dynamorio_dir, pidfile, client_params, fuzzer_id, target_cmd
+  );
 
   ZeroMemory( &si, sizeof(si) );
   si.cb = sizeof(si);
   ZeroMemory( &pi, sizeof(pi) );
 
-  if(!CreateProcess(NULL, dr_cmd, NULL, NULL, FALSE, /*CREATE_NO_WINDOW*/0, NULL, NULL, &si, &pi)) {
+  if(sinkhole_stds) {
+    si.hStdOutput = si.hStdError = devnul_handle;
+    si.dwFlags |= STARTF_USESTDHANDLES;
+  } else {
+    inherit_handles = FALSE;
+  }
+
+  if(!CreateProcess(NULL, dr_cmd, NULL, NULL, inherit_handles, /*CREATE_NO_WINDOW*/0, NULL, NULL, &si, &pi)) {
     FATAL("CreateProcess failed, GLE=%d.\n", GetLastError());
   }
 
@@ -1988,9 +2081,9 @@ static void create_target_process(char** argv) {
   watchdog_enabled = 1;
 
   if(!ConnectNamedPipe(pipe_handle, NULL)) {
-	  if(GetLastError() != ERROR_PIPE_CONNECTED) {
+    if(GetLastError() != ERROR_PIPE_CONNECTED) {
         FATAL("ConnectNamedPipe failed, GLE=%d.\n", GetLastError());
-	  }
+    }
   }
 
   watchdog_enabled = 0;
@@ -2008,6 +2101,7 @@ static void create_target_process(char** argv) {
   fread(buf, pidsize, 1, fp);
   buf[pidsize] = 0;
   fclose(fp);
+  remove(pidfile);
 
   child_pid = atoi(buf);
 
@@ -2116,6 +2210,21 @@ static u8 run_target(char** argv) {
   char command[] = "F";
   DWORD num_read;
   char result = 0;
+
+  if(sinkhole_stds && devnul_handle == INVALID_HANDLE_VALUE) {
+    devnul_handle = CreateFile(
+        "nul",
+        GENERIC_READ | GENERIC_WRITE,
+        FILE_SHARE_READ | FILE_SHARE_WRITE,
+        NULL,
+        OPEN_EXISTING,
+        0,
+        NULL);
+
+    if(devnul_handle == INVALID_HANDLE_VALUE) {
+      PFATAL("Unable to open the nul device.");
+    }
+  }
 
   if(!is_child_running()) {
     destroy_target_process(0);
@@ -3598,13 +3707,13 @@ static void show_stats(void) {
 
   /* Let's start by drawing a centered banner. */
 
-  banner_len = (crash_mode ? 24 : 22) + strlen(VERSION) + strlen(use_banner);
+  banner_len = 24 + strlen(VERSION) + strlen(WINAFL_VERSION) + strlen(use_banner);
   banner_pad = (80 - banner_len) / 2;
   memset(tmp, ' ', banner_pad);
 
-  sprintf(tmp + banner_pad, "%s " cLCY VERSION cLGN
-          " (%s)",  crash_mode ? cPIN "peruvian were-rabbit" : 
-          cYEL "american fuzzy lop", use_banner);
+  sprintf(tmp + banner_pad, "WinAFL " WINAFL_VERSION " based on %s "
+          cLCY VERSION cLGN " (%s)",  crash_mode ? cPIN "PWR" : 
+          cYEL "AFL", use_banner);
 
   SAYF("\n%s\n\n", tmp);
 
@@ -6928,17 +7037,13 @@ static void extract_client_params(u32 argc, char** argv) {
   opt_start = optind;
 
   for (i = optind; i < argc; i++) {
-	if(strcmp(argv[i],"--") == 0) break;
+    if(strcmp(argv[i],"--") == 0) break;
     nclientargs++;
     len += strlen(argv[i]) + 1;
   }
 
   if(i == argc) usage(argv[0]);
   opt_end = i;
-
-  if(sync_id) {
-    len += strlen("-fuzzer_id") + strlen(sync_id) + 2;
-  }
 
   buf = client_params = ck_alloc(len);
 
@@ -6952,13 +7057,8 @@ static void extract_client_params(u32 argc, char** argv) {
     *(buf++) = ' ';
   }
 
-  if(sync_id) {
-	  memcpy(buf, "-fuzzer_id ", strlen("-fuzzer_id "));
-	  buf += strlen("-fuzzer_id ");
-	  memcpy(buf, sync_id, strlen(sync_id));
-	  buf += strlen(sync_id);
-  } else if(buf != client_params) {
-	  buf--;
+  if(buf != client_params) {
+    buf--;
   }
 
   *buf = 0;
@@ -6968,9 +7068,9 @@ static void extract_client_params(u32 argc, char** argv) {
   //extract the number of fuzz iterations from client params
   fuzz_iterations_max = 1000;
   for (i = opt_start; i < opt_end; i++) {
-	  if((strcmp(argv[i], "-fuzz_iterations") == 0) && ((i + 1) < opt_end)) {
-		  fuzz_iterations_max = atoi(argv[i+1]);
-	  }
+    if((strcmp(argv[i], "-fuzz_iterations") == 0) && ((i + 1) < opt_end)) {
+      fuzz_iterations_max = atoi(argv[i+1]);
+    }
   }
 
 }
@@ -7000,32 +7100,33 @@ static void extract_client_params(u32 argc, char** argv) {
 
 
 int getopt(int argc, char **argv, char *optstring) {
-	char *c;
+  char *c;
 
-	optarg = NULL;
+  optarg = NULL;
 
-	while(1) {
-		if(optind == argc) return -1;
-		if(strcmp(argv[optind], "--") == 0) return -1;
-		if(argv[optind][0] != '-') {
-			optind++;
-			continue;
-		}
-		if(!argv[optind][1]) {
-			optind++;
-			continue;
-		}
+  while(1) {
+    if(optind == argc) return -1;
+    if(strcmp(argv[optind], "--") == 0) return -1;
+    if(argv[optind][0] != '-') {
+      optind++;
+      continue;
+    }
+    if(!argv[optind][1]) {
+      optind++;
+      continue;
+    }
 
-		c = strchr(optstring, argv[optind][1]);
-		if(!c) return -1;
-		if(c[1] == ':') {
-			if((optind+1) == argc) return -1;
-			optarg = argv[optind+1];
-			optind+=2;
-		}
+    c = strchr(optstring, argv[optind][1]);
+    if(!c) return -1;
+    optind++;
+    if(c[1] == ':') {
+      if(optind == argc) return -1;
+      optarg = argv[optind];
+      optind++;
+    }
 
-		return (int)(c[0]);
-	}
+    return (int)(c[0]);
+  }
 }
 
 /* Main entry point */
@@ -7041,7 +7142,8 @@ int main(int argc, char** argv) {
 
   setup_watchdog_timer();
 
-  SAYF(cCYA "afl-fuzz " cBRI VERSION cRST " by <lcamtuf@google.com>\n");
+  SAYF("WinAFL " WINAFL_VERSION " by <ifratric@google.com>\n");
+  SAYF("Based on AFL " cBRI VERSION cRST " by <lcamtuf@google.com>\n");
 
   doc_path = "docs";
 
@@ -7086,6 +7188,7 @@ int main(int argc, char** argv) {
 
         if (sync_id) FATAL("Multiple -S or -M options not supported");
         sync_id = optarg;
+        fuzzer_id = sync_id;
         break;
 
       case 'f': /* target file */
@@ -7235,6 +7338,7 @@ int main(int argc, char** argv) {
   if (getenv("AFL_NO_CPU_RED"))    no_cpu_meter_red = 1;
   if (getenv("AFL_NO_VAR_CHECK"))  no_var_check     = 1;
   if (getenv("AFL_SHUFFLE_QUEUE")) shuffle_queue    = 1;
+  if (getenv("AFL_NO_SINKHOLE"))   sinkhole_stds    = 0;
 
   if (dumb_mode == 2 && no_forkserver)
     FATAL("AFL_DUMB_FORKSRV and AFL_NO_FORKSRV are mutually exclusive");
@@ -7253,6 +7357,8 @@ int main(int argc, char** argv) {
   setup_shm();
   child_handle = NULL;
   pipe_handle = NULL;
+
+  devnul_handle = INVALID_HANDLE_VALUE;
 
   setup_dirs_fds();
   read_testcases();
@@ -7371,10 +7477,17 @@ stop_fuzzing:
 
   }
 
+  if(devnul_handle != INVALID_HANDLE_VALUE) {
+    CloseHandle(devnul_handle);
+  }
+
   fclose(plot_file);
   destroy_queue();
   destroy_extras();
   ck_free(target_path);
+
+  if(fuzzer_id != NULL && fuzzer_id != sync_id)
+    ck_free(fuzzer_id);
 
   alloc_report();
 

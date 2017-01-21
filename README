@@ -84,7 +84,7 @@ cmake --build . --config Release
 ---------------
 
 Note: If you are using pre-built binaries you'll need to download DynamoRIO
-release 6.1.1-3 from https://github.com/DynamoRIO/dynamorio/wiki/Downloads.
+release 6.2.0-2 from https://github.com/DynamoRIO/dynamorio/wiki/Downloads.
 If you built WinAFL from source, you can use whatever version of DynamoRIO
 you used to build WinAFL.
 
@@ -111,7 +111,7 @@ Please refer to the original AFL documentation for more info on these flags.
 The following instrumentation options are used
 
   -covtype         - the type of coverage being recorded. Supported options are
-                     bb (basic block) or edge (default).
+                     bb (basic block, default) or edge.
 
   -coverage_module - module for which to record coverage. Multiple module flags
                      are supported.
@@ -165,11 +165,11 @@ You should see the output corresponding to your target function being run 10
 times after which the target executable will exit. A .log file should be
 created in the current directory. The log file contains useful information
 such as the files and modules loaded by the target as well as the dump of AFL
-coverage map. You should see your input file being opened at least 10 times
-(or more), as afl-fuzz requires that the file is opened for each fuzzing
+coverage map. In the log you should see pre_fuzz_handler and post_fuzz_handler
+being run exactly 10 times as well as your input file being open in each
 iteration. Note the list of loaded modules for setting the -coverage_module
 flag. Note that you must use the same values for module names as seen in the
-log file (case sensitive).
+log file (not case sensitive).
 
 3. Now you should be ready to fuzz the target. First, make sure that both
 afl-fuzz.exe and winafl.dll are in the current directory. As stated earlier,
@@ -182,11 +182,19 @@ Please refer above for the list of supported AFL and instrumentation options.
 In AFL options, you must specify the DynamoRIO binaries directory via the new
 -D option. You need to match the DynamoRIO and winafl.dll build (32 vs. 64 bit)
 to the target binary. -t (timeout) option is mandatory for winafl as execution
-time can vary significantly under instrumentation so itâ€™s not a good idea to
+time can vary significantly under instrumentation so it’s not a good idea to
 rely on the auto-determined values.
 
 You can use the same winafl options as in step 2 but remember to exclude the
 -debug flag and you'll probably want to increase the iteration count.
+
+Note that, unlike linux AFL, in WinAFL the default coverage mode is basic
+block. This is because in multithreaded (i.e. most real-world) applications
+every context switch would be interpreted as new coverage even when no new
+coverage actually occured. If you are confident that all your coverage modules
+execute only a single thread at a time you can change this by adding
+-covtype edge
+to your instrumentation flags.
 
 As in afl-fuzz on Linux you can replace the input file param of the target
 binary with @@
@@ -198,4 +206,4 @@ afl-fuzz.exe -i in -o out -D C:\work\winafl\DynamoRIO\bin64 -t 20000 --
 -fuzz_iterations 5000 -target_module test_gdiplus.exe -target_offset 0x1270
 -nargs 2 -- test_gdiplus.exe @@
 
-Thatâ€™s it. Happy fuzzing! Let me know if you find any bugs.
+That’s it. Happy fuzzing! Let me know if you find any bugs.
