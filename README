@@ -207,3 +207,69 @@ afl-fuzz.exe -i in -o out -D C:\work\winafl\DynamoRIO\bin64 -t 20000 --
 -nargs 2 -- test_gdiplus.exe @@
 
 That’s it. Happy fuzzing! Let me know if you find any bugs.
+
+5) How does my target run onder WinAFL
+--------------------------------------
+
+When you select a target function and fuzz the app this happens:
+
+1. Your target runs normally until your target function is reached.
+2. WinAFL starts recording coverage
+3. Your target function runs until return
+4. WinAFL reports coverage, rewrites the input file and patches EIP
+   so that the execution jumps back to step 2
+5. After your target function runs for the specified number of iterations,
+   the target process is killed and restarted. Note that anything that runs
+   after the target function returns is never reached.
+
+6) How to select a target function
+----------------------------------
+
+The target function should do these things during its lifetime:
+
+1. Open the input file. This needs to happen withing the target function so
+   that you can read a new input file for each iteration as the input file is
+   rewritten between target function runs).
+2. Parse it (so that you can measure coverage of file parsing)
+3. Close the input file. This is important because if the input file is
+   not closed WinAFL won't be able to rewrite it.
+4. Return normally (So that WinAFL can "catch" this return and redirect
+   execution. "returning" via ExitProcess() and such won't work)
+
+7) FAQ
+------
+
+Q: WinAFL reports timeouts while processing initial testcases.
+A: You should run your target in debug mode first (-debug flag) and only
+   run WinAFL once you get a message in the debug log that everything
+   appears to be running normally.
+
+Q: WinAFL runs slower than expected
+A: This can commonly happen for several reasons
+ - Your target function loads a dll for every iteration. This causes
+   DynamoRIO to translate the same code for every iteration which causes
+   slowdowns. You will be able to see this in the debug log. To
+   resolve, select (or write) your target function differently.
+ - Your target function does not close the input file properly, which
+   causes WinAFL to kill the process in order to rewrite it. Please refer
+   to 6) for what a target function should look like.
+
+Q: Can I fuzz DLLs with WinAFL
+A: Yes, if you can write a harness that loads a library and runs some
+   function within. Write your target function according to 6) and for
+   best performance, load the dll outside of your target function (see
+   the previous question).
+
+Q: Can I fuzz GUI apps with WinAFL
+A: Yes, provided that
+ - There is a target function that behaves as explained in section 6)
+ - The target function is reachable without user interaction
+ - The target function runs and returns without user interaction
+If these conditions are not satisfied, you might need to make custom changes
+to WinAFL and/or your target.
+
+8) Special Thanks
+-----------------
+
+Special thanks to Axel "0vercl0k" Souchet of MSRC Vulnerabilities and
+Mitigations Team for his contributions!
