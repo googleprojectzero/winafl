@@ -55,7 +55,7 @@ user wants to fuzz) and instrumenting it so that it runs in a loop.
 ------------------
 
 1. Download and build DynamoRio sources or download DynamoRio Windows binary
-package from https://github.com/DynamoRIO/dynamorio/wiki/Downloads 
+package from https://github.com/DynamoRIO/dynamorio/wiki/Downloads
 
 2. Open Visual Studio Command Prompt (or Visual Studio x64 Win64 Command Prompt
 if you want a 64-bit build). Note that you need a 64-bit winafl.dll build if
@@ -90,7 +90,7 @@ you used to build WinAFL.
 
 The command line for afl-fuzz on Windows is different than on Linux. Instead of
 
-%s [ afl options ] -- [instrumentation options] -- 
+%s [ afl options ] -- [instrumentation options] --
 
 it now looks like this
 
@@ -138,6 +138,14 @@ The following instrumentation options are used
 
   -logdir          - specifies in which directory the log file will be written
                      (only to be used with -debug).
+
+  -call_convention - The default calling convention is cdecl on 32-bit x86
+                     platforms and Microsoft x64 for Visual Studio 64-bit
+                     applications. Possible values:
+                         * fastcall: fastcall
+                         * ms64: Microsoft x64 (Visual Studio)
+                         * stdcall: cdecl or stdcall
+                         * thiscall: thiscall
 
 In general, you should perform the following steps when fuzzing a new target:
 
