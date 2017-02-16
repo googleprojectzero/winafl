@@ -469,8 +469,13 @@ event_module_unload(void *drcontext, const module_data_t *info)
 static void
 event_module_load(void *drcontext, const module_data_t *info, bool loaded)
 {
-    const char *module_name = dr_module_preferred_name(info);
+    const char *module_name = info->names.exe_name;
     app_pc to_wrap;
+
+    if (module_name == NULL) {
+        // In case exe_name is not defined, we will fall back on the preferred name.
+        module_name = dr_module_preferred_name(info);
+    }
 
     if(options.debug_mode)
         dr_fprintf(winafl_data.log, "Module loaded, %s\n", module_name);
