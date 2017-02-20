@@ -3,6 +3,18 @@ ChangeLog
 =========
 
 ----------------------------------
+Version 1.06 (based on afl 1.96b):
+----------------------------------
+  - Windows port of afl-cmin
+    Contributed by Axel "0vercl0k" Souchet of MSRC Vulnerabilities and Mitigations Team
+  - Use exe_name instead of the preferred name
+    Contributed by Axel "0vercl0k" Souchet of MSRC Vulnerabilities and Mitigations Team
+  - Add option to choose the calling convention
+    Contributed by shawndenbow
+  - Fix for building on VS2015
+    Contributed by b1ack0wl
+
+----------------------------------
 Version 1.05 (based on afl 1.96b):
 ----------------------------------
   - Windows port of afl-showmap

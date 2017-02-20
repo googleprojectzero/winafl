@@ -147,16 +147,16 @@ def setup_argparse():
             '''
             Examples of use:
              * Typical use
-              afl-cmin-win.py -D D:\\DRIO\\bin32 -t 100000 -i in -o minset -covtype edge -coverage_module m.dll -target_module test.exe -target_method fuzz -nargs 2 -- test.exe @@
+              winafl-cmin.py -D D:\\DRIO\\bin32 -t 100000 -i in -o minset -covtype edge -coverage_module m.dll -target_module test.exe -target_method fuzz -nargs 2 -- test.exe @@
 
              * Dry-run, keep crashes only with 4 workers with a working directory:
-              afl-cmin-win.py -C --dry-run -w 4 --working-dir D:\\dir -D D:\\DRIO\\bin32 -t 10000 -i in -i C:\\fuzz\\in -o out_mini -covtype edge -coverage_module m.dll -target_module test.exe -target_method fuzz -nargs 2 -- test.exe @@
+              winafl-cmin.py -C --dry-run -w 4 --working-dir D:\\dir -D D:\\DRIO\\bin32 -t 10000 -i in -i C:\\fuzz\\in -o out_mini -covtype edge -coverage_module m.dll -target_module test.exe -target_method fuzz -nargs 2 -- test.exe @@
 
              * Read from specific file
-              afl-cmin-win.py -D D:\\DRIO\\bin32 -t 100000 -i in -o minset -f foo.ext -covtype edge -coverage_module m.dll -target_module test.exe -target_method fuzz -nargs 2 -- test.exe @@
+              winafl-cmin.py -D D:\\DRIO\\bin32 -t 100000 -i in -o minset -f foo.ext -covtype edge -coverage_module m.dll -target_module test.exe -target_method fuzz -nargs 2 -- test.exe @@
 
              * Read from specific file with pattern
-              afl-cmin-win.py -D D:\\DRIO\\bin32 -t 100000 -i in -o minset -f prefix-@@-foo.ext -covtype edge -coverage_module m.dll -target_module test.exe -target_method fuzz -nargs 2 -- test.exe @@
+              winafl-cmin.py -D D:\\DRIO\\bin32 -t 100000 -i in -o minset -f prefix-@@-foo.ext -covtype edge -coverage_module m.dll -target_module test.exe -target_method fuzz -nargs 2 -- test.exe @@
             '''
         ), 100, replace_whitespace = False))
     )
