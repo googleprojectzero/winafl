@@ -54,4 +54,8 @@ use_DynamoRIO_extension(winafl drx)
 use_DynamoRIO_extension(winafl drcontainers)
 use_DynamoRIO_extension(winafl drreg)
 use_DynamoRIO_extension(winafl drwrap)
+# VS2015 Fix
+target_link_libraries(winafl "libucrt.lib")
+target_link_libraries(winafl "libvcruntime.lib")
+
 
