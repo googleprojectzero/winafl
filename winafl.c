@@ -85,13 +85,10 @@ typedef struct _winafl_data_t {
     file_t  log;
     //unsigned char afl_area[MAP_SIZE];
     unsigned char *afl_area;
-#ifdef _WIN64
-    uint64 previous_offset;
-#else
-    unsigned int previous_offset;
-#endif
 } winafl_data_t;
 static winafl_data_t winafl_data;
+
+static int winafl_tls_field;
 
 typedef struct _fuzz_target_t {
     reg_t xsp;            /* stack level at entry to the fuzz target */
@@ -184,15 +181,28 @@ onexception(void *drcontext, dr_exception_t *excpt) {
        (exception_code == EXCEPTION_ILLEGAL_INSTRUCTION) ||
        (exception_code == EXCEPTION_PRIV_INSTRUCTION) ||
        (exception_code == EXCEPTION_STACK_OVERFLOW)) {
-          if(options.debug_mode)
-            dr_fprintf(winafl_data.log, "crashed\n");
-          if(!options.debug_mode)
-            WriteFile(pipe, "C", 1, &num_written, NULL);
-          dr_exit_process(1);
+            if(options.debug_mode) {
+                dr_fprintf(winafl_data.log, "crashed\n");
+            } else {
+                WriteFile(pipe, "C", 1, &num_written, NULL);
+            }
+            dr_exit_process(1);
     }
     return true;
 }
 
+static void event_thread_init(void *drcontext)
+{
+  void *data = dr_thread_alloc(drcontext, 8);
+  drmgr_set_tls_field(drcontext, winafl_tls_field, data);
+  memset(data, 0, 8);
+}
+
+static void event_thread_exit(void *drcontext)
+{
+  void *data = drmgr_get_tls_field(drcontext, winafl_tls_field);
+  dr_thread_free(drcontext, data, 8);
+}
 
 static dr_emit_flags_t
 instrument_bb_coverage(void *drcontext, void *tag, instrlist_t *bb, instr_t *inst,
@@ -206,6 +216,7 @@ instrument_bb_coverage(void *drcontext, void *tag, instrlist_t *bb, instr_t *ins
     uint offset;
     target_module_t *target_modules;
     bool should_instrument;
+    unsigned char *afl_map;
 
     if (!drmgr_is_first_instr(drcontext, inst))
         return DR_EMIT_DEFAULT;
@@ -239,11 +250,13 @@ instrument_bb_coverage(void *drcontext, void *tag, instrlist_t *bb, instr_t *ins
     offset = (uint)(start_pc - mod_entry->data->start);
     offset &= MAP_SIZE - 1;
 
+    afl_map = winafl_data.afl_area;
+
     drreg_reserve_aflags(drcontext, bb, inst);
 
     instrlist_meta_preinsert(bb, inst,
         INSTR_CREATE_inc(drcontext, OPND_CREATE_ABSMEM
-        (&(winafl_data.afl_area[offset]), OPSZ_1)));
+        (&(afl_map[offset]), OPSZ_1)));
 
     drreg_unreserve_aflags(drcontext, bb, inst);
 
@@ -258,10 +271,7 @@ instrument_edge_coverage(void *drcontext, void *tag, instrlist_t *bb, instr_t *i
     app_pc start_pc;
     module_entry_t **mod_entry_cache;
     module_entry_t *mod_entry;
-    reg_id_t reg;
-#ifdef _WIN64
-    reg_id_t reg2;
-#endif
+    reg_id_t reg, reg2, reg3;
     opnd_t opnd1, opnd2;
     instr_t *new_instr;
     const char *module_name;
@@ -301,16 +311,35 @@ instrument_edge_coverage(void *drcontext, void *tag, instrlist_t *bb, instr_t *i
     offset = (uint)(start_pc - mod_entry->data->start);
     offset &= MAP_SIZE - 1;
 
+    //dr_fprintf(winafl_data.log, "Previous offset: %x\n", *((uint *)drmgr_get_tls_field(drcontext, winafl_tls_field)));
+
     drreg_reserve_aflags(drcontext, bb, inst);
     drreg_reserve_register(drcontext, bb, inst, NULL, &reg);
-
-#ifdef _WIN64
-
     drreg_reserve_register(drcontext, bb, inst, NULL, &reg2);
+    drreg_reserve_register(drcontext, bb, inst, NULL, &reg3);
+
+    //reg2 stores AFL area, reg 3 stores previous offset
+
+    //load address of shm into reg2
+    opnd1 = opnd_create_reg(reg2);
+#ifdef _WIN64
+    opnd2 = OPND_CREATE_INT64((uint64)winafl_data.afl_area);
+#else
+    opnd2 = OPND_CREATE_INT32((uint)winafl_data.afl_area);
+#endif
+    new_instr = INSTR_CREATE_mov_imm(drcontext, opnd1, opnd2);
+    instrlist_meta_preinsert(bb, inst, new_instr);
+
+    //load the pointer to previous offset in reg3
+    drmgr_insert_read_tls_field(drcontext, winafl_tls_field, bb, inst, reg3);
 
     //load previous offset into register
     opnd1 = opnd_create_reg(reg);
-    opnd2 = OPND_CREATE_ABSMEM(&(winafl_data.previous_offset), OPSZ_8);
+#ifdef _WIN64
+    opnd2 = OPND_CREATE_MEM64(reg3, 0);
+#else
+    opnd2 = OPND_CREATE_MEM32(reg3, 0);
+#endif
     new_instr = INSTR_CREATE_mov_ld(drcontext, opnd1, opnd2);
     instrlist_meta_preinsert(bb, inst, new_instr);
 
@@ -318,12 +347,6 @@ instrument_edge_coverage(void *drcontext, void *tag, instrlist_t *bb, instr_t *i
     opnd1 = opnd_create_reg(reg);
     opnd2 = OPND_CREATE_INT32(offset);
     new_instr = INSTR_CREATE_xor(drcontext, opnd1, opnd2);
-    instrlist_meta_preinsert(bb, inst, new_instr);
-
-    //load address of shm into the second register
-    opnd1 = opnd_create_reg(reg2);
-    opnd2 = OPND_CREATE_INT64((uint64)winafl_data.afl_area);
-    new_instr = INSTR_CREATE_mov_imm(drcontext, opnd1, opnd2);
     instrlist_meta_preinsert(bb, inst, new_instr);
 
     //increase the counter at reg + reg2
@@ -333,41 +356,17 @@ instrument_edge_coverage(void *drcontext, void *tag, instrlist_t *bb, instr_t *i
 
     //store the new value
     offset = (offset >> 1)&(MAP_SIZE - 1);
-    opnd1 = OPND_CREATE_ABSMEM(&(winafl_data.previous_offset), OPSZ_8);
-    opnd2 = OPND_CREATE_INT32(offset);
-    new_instr = INSTR_CREATE_mov_st(drcontext, opnd1, opnd2);
-    instrlist_meta_preinsert(bb, inst, new_instr);
-
-    drreg_unreserve_register(drcontext, bb, inst, reg2);
-
+#ifdef _WIN64
+    opnd1 = OPND_CREATE_MEM64(reg3, 0);
 #else
-
-    //load previous offset into register
-    opnd1 = opnd_create_reg(reg);
-    opnd2 = OPND_CREATE_ABSMEM(&(winafl_data.previous_offset), OPSZ_4);
-    new_instr = INSTR_CREATE_mov_ld(drcontext, opnd1, opnd2);
-    instrlist_meta_preinsert(bb, inst, new_instr);
-
-    //xor register with the new offset
-    opnd1 = opnd_create_reg(reg);
-    opnd2 = OPND_CREATE_INT32(offset);
-    new_instr = INSTR_CREATE_xor(drcontext, opnd1, opnd2);
-    instrlist_meta_preinsert(bb, inst, new_instr);
-
-    //increase the counter at afl_area+reg
-    opnd1 = OPND_CREATE_MEM8(reg, (int)winafl_data.afl_area);
-    new_instr = INSTR_CREATE_inc(drcontext, opnd1);
-    instrlist_meta_preinsert(bb, inst, new_instr);
-
-    //store the new value
-    offset = (offset >> 1)&(MAP_SIZE - 1);
-    opnd1 = OPND_CREATE_ABSMEM(&(winafl_data.previous_offset), OPSZ_4);
+    opnd1 = OPND_CREATE_MEM32(reg3, 0);
+#endif
     opnd2 = OPND_CREATE_INT32(offset);
     new_instr = INSTR_CREATE_mov_st(drcontext, opnd1, opnd2);
     instrlist_meta_preinsert(bb, inst, new_instr);
 
-#endif
-
+    drreg_unreserve_register(drcontext, bb, inst, reg3);
+    drreg_unreserve_register(drcontext, bb, inst, reg2);
     drreg_unreserve_register(drcontext, bb, inst, reg);
     drreg_unreserve_aflags(drcontext, bb, inst);
 
@@ -380,9 +379,11 @@ pre_fuzz_handler(void *wrapcxt, INOUT void **user_data)
     char command = 0;
     int i;
     DWORD num_read;
+    void *drcontext;
 
     app_pc target_to_fuzz = drwrap_get_func(wrapcxt);
     dr_mcontext_t *mc = drwrap_get_mcontext_ex(wrapcxt, DR_MC_ALL);
+    drcontext = drwrap_get_drcontext(wrapcxt);
 
     fuzz_target.xsp = mc->xsp;
     fuzz_target.func_pc = target_to_fuzz;
@@ -414,14 +415,20 @@ pre_fuzz_handler(void *wrapcxt, INOUT void **user_data)
     }
 
     memset(winafl_data.afl_area, 0, MAP_SIZE);
-    winafl_data.previous_offset = 0;
+
+    if(options.coverage_kind == COVERAGE_EDGE) {
+        void *data = drmgr_get_tls_field(drcontext, winafl_tls_field);
+        memset(data, 0, 8);
+    }
 }
 
 static void
 post_fuzz_handler(void *wrapcxt, void *user_data)
 {
     DWORD num_written;
-    dr_mcontext_t *mc = drwrap_get_mcontext(wrapcxt);
+    dr_mcontext_t *mc;
+
+    mc = drwrap_get_mcontext(wrapcxt);
 
     if(!options.debug_mode) {
         WriteFile(pipe, "K", 1, &num_written, NULL);
@@ -535,8 +542,6 @@ event_init(void)
 
     memset(winafl_data.cache, 0, sizeof(winafl_data.cache));
     memset(winafl_data.afl_area, 0, MAP_SIZE);
-
-    winafl_data.previous_offset = 0;
 
     if(options.debug_mode) {
         debug_data.pre_hanlder_called = 0;
@@ -743,6 +748,15 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
         setup_shmem();
     } else {
         winafl_data.afl_area = (unsigned char *)dr_global_alloc(MAP_SIZE);
+    }
+
+    if(options.coverage_kind == COVERAGE_EDGE) {
+        winafl_tls_field = drmgr_register_tls_field();
+        if(winafl_tls_field == -1) {
+            DR_ASSERT_MSG(false, "error reserving TLS field");
+        }
+        drmgr_register_thread_init_event(event_thread_init);
+        drmgr_register_thread_exit_event(event_thread_exit);
     }
 
     event_init();

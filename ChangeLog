@@ -3,8 +3,16 @@ ChangeLog
 =========
 
 ----------------------------------
+Version 1.07 (based on afl 1.96b):
+----------------------------------
+
+  - Previous_offset is now stored in TLS.
+    Edge coverage for multithreaded targets should now be more usable.
+
+----------------------------------
 Version 1.06 (based on afl 1.96b):
 ----------------------------------
+
   - Windows port of afl-cmin
     Contributed by Axel "0vercl0k" Souchet of MSRC Vulnerabilities and Mitigations Team
   - Use exe_name instead of the preferred name
@@ -17,6 +25,7 @@ Version 1.06 (based on afl 1.96b):
 ----------------------------------
 Version 1.05 (based on afl 1.96b):
 ----------------------------------
+
   - Windows port of afl-showmap
     Contributed by Axel "0vercl0k" Souchet of MSRC Vulnerabilities and Mitigations Team
   - Expaded README a bit.
