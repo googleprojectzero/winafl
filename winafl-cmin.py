@@ -303,6 +303,15 @@ def main(argc, argv):
     if args.target_cmdline[0] == '--':
         del args.target_cmdline[0]
 
+    # If we are not seeing the '@@' marker somewhere and that we are not
+    # specifying an input file with -f, then it means something is wrong
+    if args.file_read is None and '@@' not in args.target_cmdline:
+        logging.error(
+            '[!] The target command line needs to include the "@@" marker to'
+            ' specify the input file.'
+        )
+        return 1
+
     if os.path.isdir(args.working_dir) is False:
         logging.error(
             '[!] The working directory %r is not a directory', args.working_dir
