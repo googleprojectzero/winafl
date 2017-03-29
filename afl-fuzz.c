@@ -2237,6 +2237,7 @@ static u8 run_target(char** argv) {
 
   child_timed_out = 0;
   memset(trace_bits, 0, MAP_SIZE);
+  MemoryBarrier();
 
   WriteFile( 
     pipe_handle,        // handle to pipe 
@@ -2251,7 +2252,14 @@ static u8 run_target(char** argv) {
 
   ReadFile(pipe_handle, &result, 1, &num_read, NULL);
 
+  MemoryBarrier();
   watchdog_enabled = 0;
+
+#ifdef __x86_64__
+  classify_counts((u64*)trace_bits);
+#else
+  classify_counts((u32*)trace_bits);
+#endif /* ^__x86_64__ */
 
   total_execs++;
   fuzz_iterations_current++;
@@ -3715,7 +3723,7 @@ static void show_stats(void) {
 
   /* Honor AFL_EXIT_WHEN_DONE. */
 
-  if (!dumb_mode && cycles_wo_finds > 20 && !pending_not_fuzzed &&
+  if (!dumb_mode && cycles_wo_finds > 50 && !pending_not_fuzzed &&
       getenv("AFL_EXIT_WHEN_DONE")) stop_soon = 2;
 
   /* If we're not on TTY, bail out. */
@@ -3787,10 +3795,10 @@ static void show_stats(void) {
     if (queue_cycle == 1) strcpy(tmp, cMGN); else
 
     /* Subsequent cycles, but we're still making finds. */
-    if (cycles_wo_finds < 3) strcpy(tmp, cYEL); else
+    if (cycles_wo_finds < 5) strcpy(tmp, cYEL); else
 
     /* No finds for a long time and no test cases to try. */
-    if (cycles_wo_finds > 20 && !pending_not_fuzzed) strcpy(tmp, cLGN);
+    if (cycles_wo_finds > 50 && !pending_not_fuzzed) strcpy(tmp, cLGN);
 
     /* Default: cautiously OK to stop? */
     else strcpy(tmp, cLBL);
@@ -4455,9 +4463,9 @@ static u32 calculate_score(struct queue_entry* q) {
 
   if(q->depth >= 4) {
 	  if(q->depth < 8) perf_score *= 2;
-	  else if(q->depth < 14) perf_score *= 4;
-	  else if(q->depth < 26) perf_score *= 6;
-	  else perf_score *= 8;
+	  else if(q->depth < 14) perf_score *= 3;
+	  else if(q->depth < 26) perf_score *= 4;
+	  else perf_score *= 5;
   }
 
   /* Make sure that we don't go over limit. */
@@ -4666,7 +4674,7 @@ static u8 fuzz_one(char** argv) {
   u64 havoc_queued,  orig_hit_cnt, new_hit_cnt;
   u32 splice_cycle = 0, perf_score = 100, orig_perf, prev_cksum, eff_cnt = 1;
 
-  u8  ret_val = 1;
+  u8  ret_val = 1, doing_det = 0;;
 
   u8  a_collect[MAX_AUTO_EXTRA];
   u32 a_len = 0;
@@ -4911,8 +4919,6 @@ static u8 fuzz_one(char** argv) {
 
   stage_finds[STAGE_FLIP1]  += new_hit_cnt - orig_hit_cnt;
   stage_cycles[STAGE_FLIP1] += stage_max;
-
-  if (queue_cur->passed_det) goto havoc_stage;
 
   /* Two walking bits. */
 
@@ -5776,8 +5782,8 @@ havoc_stage:
 
     stage_name  = "havoc";
     stage_short = "havoc";
-    stage_max   = HAVOC_CYCLES * perf_score / havoc_div / 100;
-
+    stage_max = (doing_det ? HAVOC_CYCLES_INIT : HAVOC_CYCLES) *
+                 perf_score / havoc_div / 100;
   } else {
 
     static u8 tmp[32];
