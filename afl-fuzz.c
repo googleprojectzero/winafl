@@ -4396,9 +4396,19 @@ static u32 choose_block_len(u32 limit) {
              max_value = HAVOC_BLK_MEDIUM;
              break;
 
-    default: min_value = HAVOC_BLK_MEDIUM;
-             max_value = HAVOC_BLK_LARGE;
+    default:
 
+             if (UR(20)) {
+
+               min_value = HAVOC_BLK_MEDIUM;
+               max_value = HAVOC_BLK_LARGE;
+
+             } else {
+
+               min_value = HAVOC_BLK_LARGE;
+               max_value = HAVOC_BLK_XL;
+
+             }
 
   }
 
@@ -5670,7 +5680,7 @@ skip_interest:
 
   ex_tmp = ck_alloc(len + MAX_DICT_FILE);
 
-  for (i = 0; i < len; i++) {
+  for (i = 0; i <= len; i++) {
 
     stage_cur_byte = i;
 
@@ -6025,12 +6035,22 @@ havoc_stage:
 
             /* Clone bytes (75%) or insert a block of constant bytes (25%). */
 
+            u8  actually_clone = UR(4);
             u32 clone_from, clone_to, clone_len;
             u8* new_buf;
 
-            clone_len  = choose_block_len(temp_len);
+            if (actually_clone) {
 
-            clone_from = UR(temp_len - clone_len + 1);
+              clone_len  = choose_block_len(temp_len);
+              clone_from = UR(temp_len - clone_len + 1);
+
+            } else {
+
+              clone_len = choose_block_len(HAVOC_BLK_LARGE);
+              clone_from = 0;
+
+            }
+
             clone_to   = UR(temp_len);
 
             new_buf = ck_alloc_nozero(temp_len + clone_len);
@@ -6041,10 +6061,11 @@ havoc_stage:
 
             /* Inserted part */
 
-            if (UR(4))
+            if (actually_clone)
               memcpy(new_buf + clone_to, out_buf + clone_from, clone_len);
             else
-              memset(new_buf + clone_to, UR(256), clone_len);
+              memset(new_buf + clone_to,
+                     UR(2) ? UR(256) : out_buf[UR(temp_len)], clone_len);
 
             /* Tail */
             memcpy(new_buf + clone_to + clone_len, out_buf + clone_to,
@@ -6077,7 +6098,8 @@ havoc_stage:
               if (copy_from != copy_to)
                 memmove(out_buf + copy_to, out_buf + copy_from, copy_len);
 
-            } else memset(out_buf + copy_to, UR(256), copy_len);
+            } else memset(out_buf + copy_to,
+                          UR(2) ? UR(256) : out_buf[UR(temp_len)], copy_len);
 
             break;
 
@@ -6125,7 +6147,7 @@ havoc_stage:
 
         case 16: {
 
-            u32 use_extra, extra_len, insert_at = UR(temp_len);
+            u32 use_extra, extra_len, insert_at = UR(temp_len + 1);
             u8* new_buf;
 
             /* Insert an extra. Do the same dice-rolling stuff as for the
