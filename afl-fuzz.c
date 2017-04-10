@@ -37,7 +37,7 @@
 #include <direct.h>
 
 #define VERSION "1.96b"
-#define WINAFL_VERSION "1.06"
+#define WINAFL_VERSION "1.07"
 
 #include "config.h"
 #include "types.h"
@@ -2258,7 +2258,13 @@ static u8 run_target(char** argv) {
   }
 
   //printf("total_execs: %lld\n", total_execs);
- 
+
+#ifdef __x86_64__
+  classify_counts((u64*)trace_bits);
+#else
+  classify_counts((u32*)trace_bits);
+#endif /* ^__x86_64__ */
+
   if (result == 'K') return FAULT_NONE;
 
   if (result == 'C') {
