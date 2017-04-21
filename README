@@ -120,8 +120,9 @@ The following instrumentation options are used
                      Either -target_method or -target_offset need to be
                      specified together with this option.
 
-  -target_method   - name of the method to fuzz in persistent mode. A symbol
-                     for the method needs to be exported for this to work.
+  -target_method   - name of the method to fuzz in persistent mode. For this to
+                     work either the method needs to be exported or the symbols
+					 for target_module need to be available.
                      Otherwise use -target_offset instead.
 
   -target_offset   - offset of the method to fuzz from the start of the module.
@@ -146,6 +147,9 @@ The following instrumentation options are used
                          * ms64: Microsoft x64 (Visual Studio)
                          * stdcall: cdecl or stdcall
                          * thiscall: thiscall
+
+  -thread_coverage - If set, WinAFL will only collect coverage from a thread
+                     that executed the target function
 
 In general, you should perform the following steps when fuzzing a new target:
 
@@ -204,6 +208,14 @@ An example command line would look like
 afl-fuzz.exe -i in -o out -D C:\work\winafl\DynamoRIO\bin64 -t 20000 --
 -coverage_module gdiplus.dll -coverage_module WindowsCodecs.dll
 -fuzz_iterations 5000 -target_module test_gdiplus.exe -target_offset 0x1270
+-nargs 2 -- test_gdiplus.exe @@
+
+Alternately, if symbols for test_gdiplus.exe are available, you can use
+-target_method instead of -target_offset like so
+
+afl-fuzz.exe -i in -o out -D C:\work\winafl\DynamoRIO\bin64 -t 20000 --
+-coverage_module gdiplus.dll -coverage_module WindowsCodecs.dll
+-fuzz_iterations 5000 -target_module test_gdiplus.exe -target_method main
 -nargs 2 -- test_gdiplus.exe @@
 
 That's it. Happy fuzzing! Let me know if you find any bugs.

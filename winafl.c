@@ -29,6 +29,7 @@
 #include "drx.h"
 #include "drreg.h"
 #include "drwrap.h"
+#include "drsyms.h"
 #include "modules.h"
 #include "utils.h"
 #include "hashtable.h"
@@ -65,7 +66,6 @@ typedef struct _winafl_option_t {
     int coverage_kind;
     char logdir[MAXIMUM_PATH];
     target_module_t *target_modules;
-    //char instrument_module[MAXIMUM_PATH];
     char fuzz_module[MAXIMUM_PATH];
     char fuzz_method[MAXIMUM_PATH];
     char pipe_name[MAXIMUM_PATH];
@@ -75,6 +75,7 @@ typedef struct _winafl_option_t {
     void **func_args;
     int num_fuz_args;
     drwrap_callconv_t callconv;
+    bool thread_coverage;
 } winafl_option_t;
 static winafl_option_t options;
 
@@ -83,7 +84,7 @@ static winafl_option_t options;
 typedef struct _winafl_data_t {
     module_entry_t *cache[NUM_THREAD_MODULE_CACHE];
     file_t  log;
-    //unsigned char afl_area[MAP_SIZE];
+    unsigned char *fake_afl_area; //used for thread_coverage
     unsigned char *afl_area;
 } winafl_data_t;
 static winafl_data_t winafl_data;
@@ -193,15 +194,22 @@ onexception(void *drcontext, dr_exception_t *excpt) {
 
 static void event_thread_init(void *drcontext)
 {
-  void *data = dr_thread_alloc(drcontext, 8);
-  drmgr_set_tls_field(drcontext, winafl_tls_field, data);
-  memset(data, 0, 8);
+  void **thread_data;
+
+  thread_data = (void **)dr_thread_alloc(drcontext, 2 * sizeof(void *));
+  thread_data[0] = 0;
+  if(options.thread_coverage) {
+    thread_data[1] = winafl_data.fake_afl_area;
+  } else {
+    thread_data[0] = 0;
+  }
+  drmgr_set_tls_field(drcontext, winafl_tls_field, thread_data);
 }
 
 static void event_thread_exit(void *drcontext)
 {
   void *data = drmgr_get_tls_field(drcontext, winafl_tls_field);
-  dr_thread_free(drcontext, data, 8);
+  dr_thread_free(drcontext, data, 2 * sizeof(void *));
 }
 
 static dr_emit_flags_t
@@ -254,9 +262,32 @@ instrument_bb_coverage(void *drcontext, void *tag, instrlist_t *bb, instr_t *ins
 
     drreg_reserve_aflags(drcontext, bb, inst);
 
-    instrlist_meta_preinsert(bb, inst,
-        INSTR_CREATE_inc(drcontext, OPND_CREATE_ABSMEM
-        (&(afl_map[offset]), OPSZ_1)));
+    if(options.thread_coverage) {
+      reg_id_t reg;
+      opnd_t opnd1, opnd2;
+      instr_t *new_instr;
+
+      drreg_reserve_register(drcontext, bb, inst, NULL, &reg);
+
+      drmgr_insert_read_tls_field(drcontext, winafl_tls_field, bb, inst, reg);
+
+      opnd1 = opnd_create_reg(reg);
+      opnd2 = OPND_CREATE_MEMPTR(reg, sizeof(void *));
+      new_instr = INSTR_CREATE_mov_ld(drcontext, opnd1, opnd2);
+      instrlist_meta_preinsert(bb, inst, new_instr);
+
+      opnd1 = OPND_CREATE_MEM8(reg, offset);
+      new_instr = INSTR_CREATE_inc(drcontext, opnd1);
+      instrlist_meta_preinsert(bb, inst, new_instr);
+
+      drreg_unreserve_register(drcontext, bb, inst, reg);
+    } else {
+
+      instrlist_meta_preinsert(bb, inst,
+          INSTR_CREATE_inc(drcontext, OPND_CREATE_ABSMEM
+          (&(afl_map[offset]), OPSZ_1)));
+
+    }
 
     drreg_unreserve_aflags(drcontext, bb, inst);
 
@@ -311,8 +342,6 @@ instrument_edge_coverage(void *drcontext, void *tag, instrlist_t *bb, instr_t *i
     offset = (uint)(start_pc - mod_entry->data->start);
     offset &= MAP_SIZE - 1;
 
-    //dr_fprintf(winafl_data.log, "Previous offset: %x\n", *((uint *)drmgr_get_tls_field(drcontext, winafl_tls_field)));
-
     drreg_reserve_aflags(drcontext, bb, inst);
     drreg_reserve_register(drcontext, bb, inst, NULL, &reg);
     drreg_reserve_register(drcontext, bb, inst, NULL, &reg2);
@@ -320,26 +349,25 @@ instrument_edge_coverage(void *drcontext, void *tag, instrlist_t *bb, instr_t *i
 
     //reg2 stores AFL area, reg 3 stores previous offset
 
-    //load address of shm into reg2
-    opnd1 = opnd_create_reg(reg2);
-#ifdef _WIN64
-    opnd2 = OPND_CREATE_INT64((uint64)winafl_data.afl_area);
-#else
-    opnd2 = OPND_CREATE_INT32((uint)winafl_data.afl_area);
-#endif
-    new_instr = INSTR_CREATE_mov_imm(drcontext, opnd1, opnd2);
-    instrlist_meta_preinsert(bb, inst, new_instr);
-
     //load the pointer to previous offset in reg3
     drmgr_insert_read_tls_field(drcontext, winafl_tls_field, bb, inst, reg3);
 
+    //load address of shm into reg2
+    if(options.thread_coverage) {
+      opnd1 = opnd_create_reg(reg2);
+      opnd2 = OPND_CREATE_MEMPTR(reg3, sizeof(void *));
+      new_instr = INSTR_CREATE_mov_ld(drcontext, opnd1, opnd2);
+      instrlist_meta_preinsert(bb, inst, new_instr);
+    } else {
+      opnd1 = opnd_create_reg(reg2);
+      opnd2 = OPND_CREATE_INTPTR((uint64)winafl_data.afl_area);
+      new_instr = INSTR_CREATE_mov_imm(drcontext, opnd1, opnd2);
+      instrlist_meta_preinsert(bb, inst, new_instr);
+    }
+
     //load previous offset into register
     opnd1 = opnd_create_reg(reg);
-#ifdef _WIN64
-    opnd2 = OPND_CREATE_MEM64(reg3, 0);
-#else
-    opnd2 = OPND_CREATE_MEM32(reg3, 0);
-#endif
+    opnd2 = OPND_CREATE_MEMPTR(reg3, 0);
     new_instr = INSTR_CREATE_mov_ld(drcontext, opnd1, opnd2);
     instrlist_meta_preinsert(bb, inst, new_instr);
 
@@ -356,11 +384,7 @@ instrument_edge_coverage(void *drcontext, void *tag, instrlist_t *bb, instr_t *i
 
     //store the new value
     offset = (offset >> 1)&(MAP_SIZE - 1);
-#ifdef _WIN64
-    opnd1 = OPND_CREATE_MEM64(reg3, 0);
-#else
-    opnd1 = OPND_CREATE_MEM32(reg3, 0);
-#endif
+    opnd1 = OPND_CREATE_MEMPTR(reg3, 0);
     opnd2 = OPND_CREATE_INT32(offset);
     new_instr = INSTR_CREATE_mov_st(drcontext, opnd1, opnd2);
     instrlist_meta_preinsert(bb, inst, new_instr);
@@ -416,9 +440,10 @@ pre_fuzz_handler(void *wrapcxt, INOUT void **user_data)
 
     memset(winafl_data.afl_area, 0, MAP_SIZE);
 
-    if(options.coverage_kind == COVERAGE_EDGE) {
-        void *data = drmgr_get_tls_field(drcontext, winafl_tls_field);
-        memset(data, 0, 8);
+    if(options.coverage_kind == COVERAGE_EDGE || options.thread_coverage) {
+        void **thread_data = (void **)drmgr_get_tls_field(drcontext, winafl_tls_field);
+        thread_data[0] = 0;
+        thread_data[1] = winafl_data.afl_area;
     }
 }
 
@@ -477,7 +502,7 @@ static void
 event_module_load(void *drcontext, const module_data_t *info, bool loaded)
 {
     const char *module_name = info->names.exe_name;
-    app_pc to_wrap;
+    app_pc to_wrap = 0;
 
     if (module_name == NULL) {
         // In case exe_name is not defined, we will fall back on the preferred name.
@@ -492,8 +517,16 @@ event_module_load(void *drcontext, const module_data_t *info, bool loaded)
             if(options.fuzz_offset) {
                 to_wrap = info->start + options.fuzz_offset;
             } else {
+                //first try exported symbols
                 to_wrap = (app_pc)dr_get_proc_address(info->handle, options.fuzz_method);
-                DR_ASSERT_MSG(to_wrap, "Can't find specified method in fuzz_module");
+                if(!to_wrap) {
+                    //if that fails, try with the symbol access library
+                    drsym_init(0);
+                    drsym_lookup_symbol(info->full_path, options.fuzz_method, (size_t *)(&to_wrap), 0);
+                    drsym_exit();
+                    DR_ASSERT_MSG(to_wrap, "Can't find specified method in fuzz_module");                
+                    to_wrap += (size_t)info->start;
+                }
             }
             drwrap_wrap_ex(to_wrap, pre_fuzz_handler, post_fuzz_handler, NULL, options.callconv);
         }
@@ -606,6 +639,7 @@ options_init(client_id_t id, int argc, const char *argv[])
     /* default values */
     options.nudge_kills = true;
     options.debug_mode = false;
+    options.thread_coverage = false;
     options.coverage_kind = COVERAGE_BB;
     options.target_modules = NULL;
     options.fuzz_module[0] = 0;
@@ -626,6 +660,8 @@ options_init(client_id_t id, int argc, const char *argv[])
             options.nudge_kills = false;
         else if (strcmp(token, "-nudge_kills") == 0)
             options.nudge_kills = true;
+        else if (strcmp(token, "-thread_coverage") == 0)
+            options.thread_coverage = true;
         else if (strcmp(token, "-debug") == 0)
             options.debug_mode = true;
         else if (strcmp(token, "-logdir") == 0) {
@@ -743,6 +779,10 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
     if (options.nudge_kills)
         drx_register_soft_kills(event_soft_kill);
 
+    if(options.thread_coverage) {
+        winafl_data.fake_afl_area = (unsigned char *)dr_global_alloc(MAP_SIZE);
+    }
+
     if(!options.debug_mode) {
         setup_pipe();
         setup_shmem();
@@ -750,7 +790,7 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
         winafl_data.afl_area = (unsigned char *)dr_global_alloc(MAP_SIZE);
     }
 
-    if(options.coverage_kind == COVERAGE_EDGE) {
+    if(options.coverage_kind == COVERAGE_EDGE || options.thread_coverage) {
         winafl_tls_field = drmgr_register_tls_field();
         if(winafl_tls_field == -1) {
             DR_ASSERT_MSG(false, "error reserving TLS field");

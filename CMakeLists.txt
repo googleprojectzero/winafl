@@ -54,6 +54,7 @@ use_DynamoRIO_extension(winafl drx)
 use_DynamoRIO_extension(winafl drcontainers)
 use_DynamoRIO_extension(winafl drreg)
 use_DynamoRIO_extension(winafl drwrap)
+use_DynamoRIO_extension(winafl drsyms)
 
 # VS2015 Fix
 if (NOT (MSVC_VERSION LESS 1900))

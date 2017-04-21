@@ -3,6 +3,18 @@ ChangeLog
 =========
 
 ----------------------------------
+Version 1.08 (based on afl 1.96b):
+----------------------------------
+
+  - It is now possible to collect coverage only from a thread that executed
+    target function using -thread_coverage flag
+
+  - When -target_method flag is used, symbols are now looked up from pdb files
+    in addition to exported symbols
+
+  - Added a missing call to classify_counts() from run_target()
+
+----------------------------------
 Version 1.07 (based on afl 1.96b):
 ----------------------------------
 
