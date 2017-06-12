@@ -51,6 +51,14 @@ fuzzing mode, that is, executing multiple input samples without restarting the
 target process. This is accomplished by selecting a target function (that the
 user wants to fuzz) and instrumenting it so that it runs in a loop.
 
+WinAFL has been successfully used to identify bugs in Windows software, such as
+
+CVE-2016-7212 - found by Aral Yaman of Noser Engineering AG
+CVE-2017-0073 - found by Symeon Paraschoudis of SensePost
+CVE-2017-0190 - found by Symeon Paraschoudis of SensePost
+
+(Let me know if you know of any others and I'll include them in the list)
+
 3) Building WinAFL
 ------------------
 
@@ -194,7 +202,7 @@ Please refer above for the list of supported AFL and instrumentation options.
 In AFL options, you must specify the DynamoRIO binaries directory via the new
 -D option. You need to match the DynamoRIO and winafl.dll build (32 vs. 64 bit)
 to the target binary. -t (timeout) option is mandatory for winafl as execution
-time can vary significantly under instrumentation so it’s not a good idea to
+time can vary significantly under instrumentation so itÂ’s not a good idea to
 rely on the auto-determined values.
 
 You can use the same winafl options as in step 2 but remember to exclude the
@@ -218,7 +226,7 @@ afl-fuzz.exe -i in -o out -D C:\work\winafl\DynamoRIO\bin64 -t 20000 --
 -fuzz_iterations 5000 -target_module test_gdiplus.exe -target_method main
 -nargs 2 -- test_gdiplus.exe @@
 
-That's it. Happy fuzzing! Let me know if you find any bugs.
+That's it. Happy fuzzing!
 
 5) How does my target run onder WinAFL
 --------------------------------------
