@@ -72,7 +72,8 @@ you are fuzzing 64-bit targets and vice versa.
 3. Go to the directory containing the source
 
 4. Type the following commands. Modify the -DDynamoRIO_DIR flag to point to the
-location of your DynamoRIO cmake files (relative to the source directory).
+location of your DynamoRIO cmake files (either full path or relative to the
+source directory).
 
 For a 32-bit build:
 
