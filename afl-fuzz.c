@@ -78,7 +78,9 @@ static u8 *in_dir,                    /* Input directory with test cases  */
           *orig_cmdline;              /* Original command line            */
 
 static u32 exec_tmout = EXEC_TIMEOUT; /* Configurable exec timeout (ms)   */
-static u64 mem_limit = MEM_LIMIT;     /* Memory cap for child (MB)        */
+static u32 hang_tmout = EXEC_TIMEOUT; /* Timeout used for hang det (ms)   */
+
+static u64 mem_limit  = MEM_LIMIT;    /* Memory cap for child (MB)        */
 
 static u32 stats_update_freq = 1;     /* Stats update frequency (execs)   */
 
@@ -126,7 +128,7 @@ int watchdog_enabled;
 static u8* trace_bits;                /* SHM with instrumentation bitmap  */
 
 static u8  virgin_bits[MAP_SIZE],     /* Regions yet untouched by fuzzing */
-           virgin_hang[MAP_SIZE],     /* Bits we haven't seen in hangs    */
+           virgin_tmout[MAP_SIZE],    /* Bits we haven't seen in tmouts   */
            virgin_crash[MAP_SIZE];    /* Bits we haven't seen in crashes  */
 
 static u8  var_bytes[MAP_SIZE];       /* Bytes that appear to be variable */
@@ -161,7 +163,8 @@ static u32 queued_paths,              /* Total number of queued testcases */
 
 static u64 total_crashes,             /* Total number of crashes          */
            unique_crashes,            /* Crashes with unique signatures   */
-           total_hangs,               /* Total number of hangs            */
+           total_tmouts,              /* Total number of timeouts         */
+           unique_tmouts,             /* Timeouts with unique signatures  */
            unique_hangs,              /* Hangs with unique signatures     */
            total_execs,               /* Total execve() calls             */
            start_time,                /* Unix start time (ms)             */
@@ -177,7 +180,7 @@ static u64 total_crashes,             /* Total number of crashes          */
            blocks_eff_total,          /* Blocks subject to effector maps  */
            blocks_eff_select;         /* Blocks selected as fuzzable      */
 
-static u32 subseq_hangs;              /* Number of hangs in a row         */
+static u32 subseq_tmouts;             /* Number of timeouts in a row      */
 
 static u8 *stage_name = "init",       /* Name of the current fuzz stage   */
           *stage_short,               /* Short stage name                 */
@@ -301,7 +304,7 @@ enum {
 
 enum {
   /* 00 */ FAULT_NONE,
-  /* 01 */ FAULT_HANG,
+  /* 01 */ FAULT_TMOUT,
   /* 02 */ FAULT_CRASH,
   /* 03 */ FAULT_ERROR,
   /* 04 */ FAULT_NOINST,
@@ -916,7 +919,7 @@ static u32 count_non_255_bytes(u8* mem) {
 
 /* Destructively simplify trace by eliminating hit count information
    and replacing it with 0x80 or 0x01 depending on whether the tuple
-   is hit or not. Called on every new crash or hang, should be
+   is hit or not. Called on every new crash or timeout, should be
    reasonably fast. */
 
 #define AREP4(_sym)   (_sym), (_sym), (_sym), (_sym)
@@ -1237,7 +1240,7 @@ static void setup_shm(void) {
 
   if (!in_bitmap) memset(virgin_bits, 255, MAP_SIZE);
 
-  memset(virgin_hang, 255, MAP_SIZE);
+  memset(virgin_tmout, 255, MAP_SIZE);
   memset(virgin_crash, 255, MAP_SIZE);
 
   while(attempts < 5) {
@@ -2207,7 +2210,7 @@ static int is_child_running() {
 /* Execute target application, monitoring for timeouts. Return status
    information. The called program will update trace_bits[]. */
 
-static u8 run_target(char** argv) {
+static u8 run_target(char** argv, u32 timeout) {
   //todo watchdog timer to detect hangs
 
   char command[] = "F";
@@ -2247,7 +2250,7 @@ static u8 run_target(char** argv) {
     NULL);        // not overlapped I/O 
 
 
-  watchdog_timeout_time = get_cur_time() + exec_tmout;
+  watchdog_timeout_time = get_cur_time() + timeout;
   watchdog_enabled = 1;
 
   ReadFile(pipe_handle, &result, 1, &num_read, NULL);
@@ -2268,14 +2271,6 @@ static u8 run_target(char** argv) {
 	  destroy_target_process(2000);
   }
 
-  //printf("total_execs: %lld\n", total_execs);
-
-#ifdef __x86_64__
-  classify_counts((u64*)trace_bits);
-#else
-  classify_counts((u32*)trace_bits);
-#endif /* ^__x86_64__ */
-
   if (result == 'K') return FAULT_NONE;
 
   if (result == 'C') {
@@ -2284,7 +2279,7 @@ static u8 run_target(char** argv) {
   }
 
   destroy_target_process(0);
-  return FAULT_HANG;
+  return FAULT_TMOUT;
 }
 
 
@@ -2382,7 +2377,8 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
 
   u64 start_us, stop_us;
 
-  s32 old_sc = stage_cur, old_sm = stage_max, old_tmout = exec_tmout;
+  s32 old_sc = stage_cur, old_sm = stage_max;
+  u32 use_tmout = exec_tmout;
   u8* old_sn = stage_name;
 
   /* Be a bit more generous about timeouts when resuming sessions, or when
@@ -2390,8 +2386,8 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
      to intermittent latency. */
 
   if (!from_queue || resuming_fuzz)
-    exec_tmout = MAX(exec_tmout + CAL_TMOUT_ADD,
-                     exec_tmout * CAL_TMOUT_PERC / 100);
+    use_tmout = MAX(exec_tmout + CAL_TMOUT_ADD,
+                    exec_tmout * CAL_TMOUT_PERC / 100);
 
   q->cal_failed++;
 
@@ -2413,7 +2409,7 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
 
     write_to_testcase(use_mem, q->len);
 
-    fault = run_target(argv);
+    fault = run_target(argv, use_tmout);
 
     /* stop_soon is set by the handler for Ctrl+C. When it's pressed,
        we want to bail out quickly. */
@@ -2502,7 +2498,6 @@ abort_calibration:
   stage_name = old_sn;
   stage_cur  = old_sc;
   stage_max  = old_sm;
-  exec_tmout = old_tmout;
 
   if (!first_run) show_stats();
 
@@ -2575,7 +2570,7 @@ static void perform_dry_run(char** argv) {
 
         break;
 
-      case FAULT_HANG:
+      case FAULT_TMOUT:
 
         if (timeout_given) {
 
@@ -2584,7 +2579,7 @@ static void perform_dry_run(char** argv) {
              out. */
 
           if (timeout_given > 1) {
-            WARNF("Test case results in a hang (skipping)");
+            WARNF("Test case results in a timeout (skipping)");
             q->cal_failed = CAL_CHANCES;
             cal_failures++;
             break;
@@ -2598,7 +2593,7 @@ static void perform_dry_run(char** argv) {
                "    '+' at the end of the value passed to -t ('-t %u+').\n", exec_tmout,
                exec_tmout);
 
-          FATAL("Test case '%s' results in a hang", fn);
+          FATAL("Test case '%s' results in a timeout", fn);
 
         } else {
 
@@ -2610,7 +2605,7 @@ static void perform_dry_run(char** argv) {
                "    If this test case is just a fluke, the other option is to just avoid it\n"
                "    altogether, and find one that is less of a CPU hog.\n", exec_tmout);
 
-          FATAL("Test case '%s' results in a hang", fn);
+          FATAL("Test case '%s' results in a timeout", fn);
 
         }
 
@@ -2984,14 +2979,14 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 
   switch (fault) {
 
-    case FAULT_HANG:
+    case FAULT_TMOUT:
 
-      /* Hangs are not very interesting, but we're still obliged to keep
+      /* Timeouts are not very interesting, but we're still obliged to keep
          a handful of samples. We use the presence of new bits in the
          hang-specific bitmap as a signal of uniqueness. In "dumb" mode, we
          just keep everything. */
 
-      total_hangs++;
+      total_tmouts++;
 
       if (unique_hangs >= KEEP_UNIQUE_HANG) return keeping;
 
@@ -3003,9 +2998,25 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
         simplify_trace((u32*)trace_bits);
 #endif /* ^__x86_64__ */
 
-        if (!has_new_bits(virgin_hang)) return keeping;
+        if (!has_new_bits(virgin_tmout)) return keeping;
 
       }
+
+      unique_tmouts++;
+
+      /* Before saving, we make sure that it's a genuine hang by re-running
+         the target with a more generous timeout (unless the default timeout
+         is already generous). */
+
+      if (exec_tmout < hang_tmout) {
+
+        u8 new_fault;
+        write_to_testcase(mem, len);
+        new_fault = run_target(argv, hang_tmout);
+
+        if (stop_soon || new_fault != FAULT_TMOUT) return keeping;
+
+       }
 
 #ifndef SIMPLE_FILES
 
@@ -3027,8 +3038,9 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 
     case FAULT_CRASH:
 
-      /* This is handled in a manner roughly similar to hangs,
-         except for slightly different limits. */
+      /* This is handled in a manner roughly similar to timeouts,
+         except for slightly different limits and no need to re-run test
+         cases. */
 
       total_crashes++;
 
@@ -3790,15 +3802,17 @@ static void show_stats(void) {
     strcpy(tmp, cNOR);
 
   } else {
+    u64 min_wo_finds = (cur_ms - last_path_time) / 1000 / 60;
 
     /* First queue cycle: don't stop now! */
-    if (queue_cycle == 1) strcpy(tmp, cMGN); else
+    if (queue_cycle == 1 || min_wo_finds < 15) strcpy(tmp, cMGN); else
 
     /* Subsequent cycles, but we're still making finds. */
-    if (cycles_wo_finds < 5) strcpy(tmp, cYEL); else
+    if (cycles_wo_finds < 25 || min_wo_finds < 30) strcpy(tmp, cYEL); else
 
     /* No finds for a long time and no test cases to try. */
-    if (cycles_wo_finds > 50 && !pending_not_fuzzed) strcpy(tmp, cLGN);
+    if (cycles_wo_finds > 100 && !pending_not_fuzzed && min_wo_finds > 120)
+      strcpy(tmp, cLGN);
 
     /* Default: cautiously OK to stop? */
     else strcpy(tmp, cLBL);
@@ -3945,10 +3959,10 @@ static void show_stats(void) {
 
   }
 
-  sprintf(tmp, "%s (%s%s unique)", DI(total_hangs), DI(unique_hangs),
+  sprintf(tmp, "%s (%s%s unique)", DI(total_tmouts), DI(unique_tmouts),
           (unique_hangs >= KEEP_UNIQUE_HANG) ? "+" : "");
 
-  SAYF (bSTG bV bSTOP "   total hangs : " cNOR "%-21s " bSTG bV "\n", tmp);
+  SAYF (bSTG bV bSTOP "  total tmouts : " cRST "%-21s " bSTG bV "\n", tmp);
 
   /* Aaaalmost there... hold on! */
 
@@ -4181,6 +4195,12 @@ static void show_init_stats(void) {
 
   }
 
+  /* In dumb mode, re-running every timing out test case with a generous time
+     limit is very expensive, so let's select a more conservative default. */
+
+  if (dumb_mode && !getenv("AFL_HANG_TMOUT"))
+    hang_tmout = exec_tmout * 4;
+
   OKF("All set and ready to roll!");
 
 }
@@ -4245,7 +4265,7 @@ static u8 trim_case(char** argv, struct queue_entry* q, u8* in_buf) {
 
       write_with_gap(in_buf, q->len, remove_pos, trim_avail);
 
-      fault = run_target(argv);
+      fault = run_target(argv, exec_tmout);
       trim_execs++;
 
       if (stop_soon || fault == FAULT_ERROR) goto abort_trimming;
@@ -4340,18 +4360,18 @@ static u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
 
   write_to_testcase(out_buf, len);
 
-  fault = run_target(argv);
+  fault = run_target(argv, exec_tmout);
 
   if (stop_soon) return 1;
 
-  if (fault == FAULT_HANG) {
+  if (fault == FAULT_TMOUT) {
 
-    if (subseq_hangs++ > HANG_LIMIT) {
+    if (subseq_tmouts++ > TMOUT_LIMIT) {
       cur_skipped_paths++;
       return 1;
     }
 
-  } else subseq_hangs = 0;
+  } else subseq_tmouts = 0;
 
   /* Users can hit us with SIGUSR1 to request the current input
      to be abandoned. */
@@ -4398,7 +4418,7 @@ static u32 choose_block_len(u32 limit) {
 
     default:
 
-             if (UR(20)) {
+             if (UR(10)) {
 
                min_value = HAVOC_BLK_MEDIUM;
                max_value = HAVOC_BLK_LARGE;
@@ -4749,7 +4769,7 @@ static u8 fuzz_one(char** argv) {
 
   out_buf = ck_alloc_nozero(len);
 
-  subseq_hangs = 0;
+  subseq_tmouts = 0;
 
   cur_depth = queue_cur->depth;
 
@@ -4759,7 +4779,7 @@ static u8 fuzz_one(char** argv) {
 
   if (queue_cur->cal_failed) {
 
-    u8 res = FAULT_HANG;
+    u8 res = FAULT_TMOUT;
 
     if (queue_cur->cal_failed < CAL_CHANCES) {
 
@@ -6031,7 +6051,7 @@ havoc_stage:
 
         case 13:
 
-          if (temp_len + HAVOC_BLK_LARGE < MAX_FILE) {
+          if (temp_len + HAVOC_BLK_XL < MAX_FILE) {
 
             /* Clone bytes (75%) or insert a block of constant bytes (25%). */
 
@@ -6046,7 +6066,7 @@ havoc_stage:
 
             } else {
 
-              clone_len = choose_block_len(HAVOC_BLK_LARGE);
+              clone_len = choose_block_len(HAVOC_BLK_XL);
               clone_from = 0;
 
             }
@@ -6460,18 +6480,18 @@ static void sync_fuzzers(char** argv) {
 
         u8  fault;
         u8* mem = malloc(st.st_size);
-		read(fd, mem, st.st_size);
+        read(fd, mem, st.st_size);
 			
         /* See what happens. We rely on save_if_interesting() to catch major
            errors and save the test case. */
 
         write_to_testcase(mem, st.st_size);
 
-        fault = run_target(argv);
+        fault = run_target(argv, exec_tmout);
 
         if (stop_soon) return;
 
-		syncing_party = sd.cFileName;
+        syncing_party = sd.cFileName;
         queued_imported += save_if_interesting(argv, mem, st.st_size, fault);
         syncing_party = 0;
 
@@ -6479,7 +6499,7 @@ static void sync_fuzzers(char** argv) {
 
         if (!(stage_cur++ % stats_update_freq)) show_stats();
 
-	  }
+      }
 
       ck_free(path);
       close(fd);
@@ -6781,7 +6801,7 @@ static void check_crash_handling(void) {
        "    external crash reporting utility. This will cause issues due to the\n"
        "    extended delay between the fuzzed binary malfunctioning and this fact\n"
        "    being relayed to the fuzzer via the standard waitpid() API.\n\n"
-       "    To avoid having crashes misinterpreted as hangs, please run the\n" 
+       "    To avoid having crashes misinterpreted as timeouts, please run the\n"
        "    following commands:\n\n"
 
        "    SL=\\System\\Library; PL=com.apple.ReportCrash\n"
@@ -6811,7 +6831,7 @@ static void check_crash_handling(void) {
          "    between the fuzzed binary malfunctioning and this information being\n"
          "    eventually relayed to the fuzzer via the standard waitpid() API.\n\n"
 
-         "    To avoid having crashes misinterpreted as hangs, please log in as root\n" 
+         "    To avoid having crashes misinterpreted as timeouts, please log in as root\n"
          "    and temporarily modify \\proc\\sys\\kernel\\core_pattern, like so:\n\n"
 
          "    echo core >\\proc\\sys\\kernel\\core_pattern\n");

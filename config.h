@@ -43,7 +43,8 @@
 
 //#define FANCY_BOXES
 
-/* Default timeout for fuzzed code (milliseconds): */
+/* Default timeout for fuzzed code (milliseconds). This is the upper bound,
+   also used for detecting hangs; the actual value is auto-scaled: */
 
 #define EXEC_TIMEOUT        1000
 
@@ -71,7 +72,7 @@
 
 /* Number of subsequent timeouts before abandoning an input file: */
 
-#define HANG_LIMIT          250
+#define TMOUT_LIMIT         250
 
 /* Maximum number of unique hangs or crashes to record: */
 
@@ -112,9 +113,9 @@
 #define HAVOC_BLK_MEDIUM    128
 #define HAVOC_BLK_LARGE     1500
 
-/* Extra-large blocks, selected very rarely (<2% of the time): */
+/* Extra-large blocks, selected very rarely (<5% of the time): */
 
-#define HAVOC_BLK_XL        16384
+#define HAVOC_BLK_XL        32768
 
 /* Probabilities of skipping non-favored entries in the queue, expressed as
    percentages: */
