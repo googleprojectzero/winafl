@@ -4199,7 +4199,7 @@ static void show_init_stats(void) {
      limit is very expensive, so let's select a more conservative default. */
 
   if (dumb_mode && !getenv("AFL_HANG_TMOUT"))
-    hang_tmout = exec_tmout * 4;
+    hang_tmout = MIN(EXEC_TIMEOUT, exec_tmout * 2 + 100);
 
   OKF("All set and ready to roll!");
 
