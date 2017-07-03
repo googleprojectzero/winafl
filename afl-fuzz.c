@@ -4677,7 +4677,7 @@ static u8 fuzz_one(char** argv) {
 
   len = queue_cur->len;
 
-  orig_in = in_buf = (u8 *)malloc(len);
+  orig_in = in_buf = (u8 *)ck_alloc_nozero(len);
   _read(fd, in_buf, len);
 
   close(fd);
@@ -6261,6 +6261,7 @@ abandon_entry:
   }
 
   if (in_buf != orig_in) ck_free(in_buf);
+  ck_free(orig_in);
   ck_free(out_buf);
   ck_free(eff_map);
 
