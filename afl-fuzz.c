@@ -98,12 +98,12 @@ static u8  skip_deterministic,        /* Skip deterministic stages?       */
            in_place_resume,           /* Attempt in-place resume?         */
            auto_changed,              /* Auto-generated tokens changed?   */
            no_cpu_meter_red,          /* Feng shui on the status screen   */
-           no_var_check,              /* Don't detect variable behavior   */
            shuffle_queue,             /* Shuffle input queue?             */
            bitmap_changed = 1,        /* Time to update bitmap?           */
            qemu_mode,                 /* Running in QEMU mode?            */
            skip_requested,            /* Skip request, via SIGUSR1        */
-           run_over10m;               /* Run time over 10 minutes?        */
+           run_over10m,               /* Run time over 10 minutes?        */
+           persistent_mode = 0;       /* Running in persistent mode?      */
 
 static s32 out_fd,                    /* Persistent fd for out_file       */
            dev_urandom_fd = -1,       /* Persistent fd for /dev/urandom   */
@@ -129,6 +129,8 @@ static u8  virgin_bits[MAP_SIZE],     /* Regions yet untouched by fuzzing */
            virgin_hang[MAP_SIZE],     /* Bits we haven't seen in hangs    */
            virgin_crash[MAP_SIZE];    /* Bits we haven't seen in crashes  */
 
+static u8  var_bytes[MAP_SIZE];       /* Bytes that appear to be variable */
+
 static HANDLE shm_handle;             /* Handle of the SHM region         */
 static HANDLE pipe_handle;            /* Handle of the name pipe          */
 static char   *fuzzer_id = NULL;      /* The fuzzer ID or a randomized 
@@ -153,6 +155,7 @@ static u32 queued_paths,              /* Total number of queued testcases */
            cur_depth,                 /* Current path depth               */
            max_depth,                 /* Max path depth                   */
            useless_at_start,          /* Number of useless starting paths */
+           var_byte_count,            /* Bitmap bytes with var behavior   */
            current_entry,             /* Current queue entry ID           */
            havoc_div = 1;             /* Cycle count divisor for havoc    */
 
@@ -165,6 +168,7 @@ static u64 total_crashes,             /* Total number of crashes          */
            last_path_time,            /* Time for most recent path (ms)   */
            last_crash_time,           /* Time for most recent crash (ms)  */
            last_hang_time,            /* Time for most recent hang (ms)   */
+           last_crash_execs,          /* Exec counter at last crash       */
            queue_cycle,               /* Queue round counter              */
            cycles_wo_finds,           /* Cycles without any new paths     */
            trim_execs,                /* Execs done to trim input files   */
@@ -181,6 +185,8 @@ static u8 *stage_name = "init",       /* Name of the current fuzz stage   */
 
 static s32 stage_cur, stage_max;      /* Stage progression                */
 static s32 splicing_with = -1;        /* Splicing with which test case?   */
+
+static u32 master_id, master_max;     /* Master instance job splitting    */
 
 static u32 syncing_case;              /* Syncing with case #...           */
 
@@ -2361,7 +2367,11 @@ static void show_stats(void);
 static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
                          u32 handicap, u8 from_queue) {
 
-  u8  fault = 0, new_bits = 0, var_detected = 0, first_run = (q->exec_cksum == 0);
+  static u8 first_trace[MAP_SIZE];
+
+  u8  fault = 0, new_bits = 0, var_detected = 0,
+      first_run = (q->exec_cksum == 0);
+
   u64 start_us, stop_us;
 
   s32 old_sc = stage_cur, old_sm = stage_max, old_tmout = exec_tmout;
@@ -2378,10 +2388,12 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
   q->cal_failed++;
 
   stage_name = "calibration";
-  stage_max  = no_var_check ? CAL_CYCLES_NO_VAR : CAL_CYCLES;
+  stage_max  = CAL_CYCLES;
 
   /* Make sure the forkserver is up before we do anything, and let's not
      count its spin-up time toward binary calibration. */
+
+  if (q->exec_cksum) memcpy(first_trace, trace_bits, MAP_SIZE);
 
   start_us = get_cur_time_us();
 
@@ -2412,12 +2424,24 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
       u8 hnb = has_new_bits(virgin_bits);
       if (hnb > new_bits) new_bits = hnb;
 
-      if (!no_var_check && q->exec_cksum) {
+      if (q->exec_cksum) {
+
+        u32 i;
+
+        for (i = 0; i < MAP_SIZE; i++)
+          if (!var_bytes[i] && first_trace[i] != trace_bits[i]) {
+            var_bytes[i] = 1;
+            stage_max    = CAL_CYCLES_LONG;
+          }
 
         var_detected = 1;
-        stage_max    = CAL_CYCLES_LONG;
 
-      } else q->exec_cksum = cksum;
+      } else {
+
+        q->exec_cksum = cksum;
+        memcpy(first_trace, trace_bits, MAP_SIZE);
+
+      }
 
     }
 
@@ -2456,9 +2480,15 @@ abort_calibration:
 
   /* Mark variable paths. */
 
-  if (var_detected && !q->var_behavior) {
-    mark_as_variable(q);
-    queued_variable++;
+  if (var_detected) {
+
+    var_byte_count = count_bytes(var_bytes);
+
+    if (!q->var_behavior) {
+      mark_as_variable(q);
+      queued_variable++;
+    }
+
   }
 
   stage_name = old_sn;
@@ -3024,7 +3054,7 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 
       unique_crashes++;
 
-      last_crash_time = get_cur_time();
+      last_crash_execs = total_execs;
 
       break;
 
@@ -3122,9 +3152,9 @@ static void find_timeout(void) {
 
 /* Update stats file for unattended monitoring. */
 
-static void write_stats_file(double bitmap_cvg, double eps) {
+static void write_stats_file(double bitmap_cvg, double stability, double eps) {
 
-  static double last_bcvg, last_eps;
+  static double last_bcvg, last_stab, last_eps;
 
   u8* fn = alloc_printf("%s\\fuzzer_stats", out_dir);
   s32 fd;
@@ -3143,46 +3173,51 @@ static void write_stats_file(double bitmap_cvg, double eps) {
   /* Keep last values in case we're called from another context
      where exec/sec stats and such are not readily available. */
 
-  if (!bitmap_cvg && !eps) {
+  if (!bitmap_cvg && !stability && !eps) {
     bitmap_cvg = last_bcvg;
+    stability  = last_stab;
     eps        = last_eps;
   } else {
     last_bcvg = bitmap_cvg;
+    last_stab = stability;
     last_eps  = eps;
   }
 
-  fprintf(f, "start_time     : %llu\n"
-             "last_update    : %llu\n"
-             "fuzzer_pid     : %u\n"
-             "cycles_done    : %llu\n"
-             "execs_done     : %llu\n"
-             "execs_per_sec  : %0.02f\n"
-             "paths_total    : %u\n"
-             "paths_favored  : %u\n"
-             "paths_found    : %u\n"
-             "paths_imported : %u\n"
-             "max_depth      : %u\n"
-             "cur_path       : %u\n"
-             "pending_favs   : %u\n"
-             "pending_total  : %u\n"
-             "variable_paths : %u\n"
-             "bitmap_cvg     : %0.02f%%\n"
-             "unique_crashes : %llu\n"
-             "unique_hangs   : %llu\n"
-             "last_path      : %llu\n"
-             "last_crash     : %llu\n"
-             "last_hang      : %llu\n"
-             "exec_timeout   : %u\n"
-             "afl_banner     : %s\n"
-             "afl_version    : 1.96b\n"
-             "command_line   : %s\n",
+  fprintf(f, "start_time        : %llu\n"
+             "last_update       : %llu\n"
+             "fuzzer_pid        : %u\n"
+             "cycles_done       : %llu\n"
+             "execs_done        : %llu\n"
+             "execs_per_sec     : %0.02f\n"
+             "paths_total       : %u\n"
+             "paths_favored     : %u\n"
+             "paths_found       : %u\n"
+             "paths_imported    : %u\n"
+             "max_depth         : %u\n"
+             "cur_path          : %u\n"
+             "pending_favs      : %u\n"
+             "pending_total     : %u\n"
+             "variable_paths    : %u\n"
+             "stability         : %0.02f%%\n"
+             "bitmap_cvg        : %0.02f%%\n"
+             "unique_crashes    : %llu\n"
+             "unique_hangs      : %llu\n"
+             "last_path         : %llu\n"
+             "last_crash        : %llu\n"
+             "last_hang         : %llu\n"
+             "execs_since_crash : %llu\n"
+             "exec_timeout      : %u\n"
+             "afl_banner        : %s\n"
+             "afl_version       : " VERSION "\n"
+             "command_line      : %s\n",
              start_time / 1000, get_cur_time() / 1000, 0,
              queue_cycle ? (queue_cycle - 1) : 0, total_execs, eps,
              queued_paths, queued_favored, queued_discovered, queued_imported,
              max_depth, current_entry, pending_favored, pending_not_fuzzed,
-             queued_variable, bitmap_cvg, unique_crashes, unique_hangs,
-             last_path_time / 1000, last_crash_time / 1000,
-             last_hang_time / 1000, exec_tmout, use_banner, orig_cmdline);
+             queued_variable, stability, bitmap_cvg, unique_crashes,
+             unique_hangs, last_path_time / 1000, last_crash_time / 1000,
+             last_hang_time / 1000, total_execs - last_crash_execs,
+             exec_tmout, use_banner, orig_cmdline);
              /* ignore errors */
 
   fclose(f);
@@ -3600,7 +3635,7 @@ static void show_stats(void) {
 
   static u64 last_stats_ms, last_plot_ms, last_ms, last_execs;
   static double avg_exec;
-  double t_byte_ratio;
+  double t_byte_ratio, stab_ratio;
 
   u64 cur_ms;
   u32 t_bytes, t_bits;
@@ -3653,12 +3688,17 @@ static void show_stats(void) {
   t_bytes = count_non_255_bytes(virgin_bits);
   t_byte_ratio = ((double)t_bytes * 100) / MAP_SIZE;
 
+  if (t_bytes)
+    stab_ratio = 100 - ((double)var_byte_count) * 100 / t_bytes;
+  else
+    stab_ratio = 100;
+
   /* Roughly every minute, update fuzzer stats and save auto tokens. */
 
   if (cur_ms - last_stats_ms > STATS_UPDATE_SEC * 1000) {
 
     last_stats_ms = cur_ms;
-    write_stats_file(t_byte_ratio, avg_exec);
+    write_stats_file(t_byte_ratio, stab_ratio, avg_exec);
     save_auto();
     write_bitmap();
 
@@ -3819,7 +3859,8 @@ static void show_stats(void) {
   SAYF(bV bSTOP "  now processing : " cNOR "%-17s " bSTG bV bSTOP, tmp);
 
 
-  sprintf(tmp, "%s (%0.02f%%)", DI(t_bytes), t_byte_ratio);
+  sprintf(tmp, "%0.02f%% / %0.02f%%", ((double)queue_cur->bitmap_size) *
+          100 / MAP_SIZE, t_byte_ratio);
 
   SAYF("    map density : %s%-20s " bSTG bV "\n", t_byte_ratio > 70 ? cLRD : 
        ((t_bytes < 200 && !dumb_mode) ? cPIN : cNOR), tmp);
@@ -3963,9 +4004,15 @@ static void show_stats(void) {
           DI(stage_finds[STAGE_HAVOC]), DI(stage_cycles[STAGE_HAVOC]),
           DI(stage_finds[STAGE_SPLICE]), DI(stage_cycles[STAGE_SPLICE]));
 
-  SAYF(bV bSTOP "       havoc : " cNOR "%-37s " bSTG bV bSTOP 
-       "  variable : %s%-9s " bSTG bV "\n", tmp, queued_variable ? cLRD : cNOR,
-      no_var_check ? (u8*)"n/a" : DI(queued_variable));
+  sprintf(tmp, "%s (%0.02f%%)", DI(t_bytes), t_byte_ratio);
+
+  SAYF(bV bSTOP "       havoc : " cRST "%-37s " bSTG bV bSTOP, tmp);
+
+  if (t_bytes) sprintf(tmp, "%0.02f%%", stab_ratio);
+    else strcpy(tmp, "n/a");
+
+  SAYF(" stability : %s%-10s " bSTG bV "\n", stab_ratio < 90 ? cLRD :
+          ((queued_variable && !persistent_mode) ? cMGN : cRST), tmp);
 
   if (!bytes_trim_out) {
 
@@ -4752,6 +4799,14 @@ static u8 fuzz_one(char** argv) {
   if (skip_deterministic || queue_cur->was_fuzzed || queue_cur->passed_det)
     goto havoc_stage;
 
+  /* Skip deterministic fuzzing if exec path checksum puts this out of scope
+     for this master instance. */
+
+  if (master_max && (queue_cur->exec_cksum % master_max) != master_id - 1)
+    goto havoc_stage;
+
+  doing_det = 1;
+
   /*********************************************
    * SIMPLE BITFLIP (+dictionary construction) *
    *********************************************/
@@ -4921,7 +4976,7 @@ static u8 fuzz_one(char** argv) {
   /* Effector map setup. These macros calculate:
 
      EFF_APOS      - position of a particular file offset in the map.
-     EFF_ALEN      - length of an map with a particular number of bytes.
+     EFF_ALEN      - length of a map with a particular number of bytes.
      EFF_SPAN_ALEN - map span for a sequence of bytes.
 
    */
@@ -6287,7 +6342,7 @@ static void sync_fuzzers(char** argv) {
   find_pattern = alloc_printf("%s\\*", sync_dir);
   h = FindFirstFile(find_pattern, &sd);
   if(h == INVALID_HANDLE_VALUE) {
-	  PFATAL("Unable to open '%s'", sync_dir);
+    PFATAL("Unable to open '%s'", sync_dir);
   }
 
   stage_max = stage_cur = 0;
@@ -6350,7 +6405,7 @@ static void sync_fuzzers(char** argv) {
       s32 fd;
       struct stat st;
 
-	  if (qd.cFileName[0] == '.' ||
+      if (qd.cFileName[0] == '.' ||
 		  sscanf(qd.cFileName, CASE_PREFIX "%06u", &syncing_case) != 1 || 
           syncing_case < min_accept) continue;
 
@@ -6359,11 +6414,17 @@ static void sync_fuzzers(char** argv) {
       if (syncing_case >= next_min_accept)
         next_min_accept = syncing_case + 1;
 
-	  path = alloc_printf("%s\\%s", qd_path, qd.cFileName);
+      path = alloc_printf("%s\\%s", qd_path, qd.cFileName);
 
       fd = open(path, O_RDONLY | O_BINARY);
-      if (fd < 0) PFATAL("Unable to open '%s'", path);
 
+      /* Allow this to fail in case the other fuzzer is resuming or so... */
+
+      if (fd < 0) {
+         ck_free(path);
+         continue;
+      }
+ 
       if (fstat(fd, &st)) PFATAL("fstat() failed");
 
       /* Ignore zero-sized or oversized files. */
@@ -7193,10 +7254,25 @@ int main(int argc, char** argv) {
         force_deterministic = 1;
         /* Fall through */
 
-      case 'S': /* sync ID */
+      case 'S': { /* secondary sync ID */
 
-        if (sync_id) FATAL("Multiple -S or -M options not supported");
-        sync_id = optarg;
+          u8* c;
+
+          if (sync_id) FATAL("Multiple -S or -M options not supported");
+          sync_id = optarg;
+
+          if ((c = strchr(sync_id, ':'))) {
+
+            *c = 0;
+
+            if (sscanf(c + 1, "%u/%u", &master_id, &master_max) != 2 ||
+                !master_id || !master_max || master_id > master_max ||
+                master_max > 1000000) FATAL("Bogus master ID passed to -M");
+
+          }
+
+        }
+
         fuzzer_id = sync_id;
         break;
 
@@ -7345,7 +7421,6 @@ int main(int argc, char** argv) {
 
   if (getenv("AFL_NO_FORKSRV"))    no_forkserver    = 1;
   if (getenv("AFL_NO_CPU_RED"))    no_cpu_meter_red = 1;
-  if (getenv("AFL_NO_VAR_CHECK"))  no_var_check     = 1;
   if (getenv("AFL_SHUFFLE_QUEUE")) shuffle_queue    = 1;
   if (getenv("AFL_NO_SINKHOLE"))   sinkhole_stds    = 0;
 
@@ -7401,7 +7476,7 @@ int main(int argc, char** argv) {
 
   seek_to = find_start_position();
 
-  write_stats_file(0, 0);
+  write_stats_file(0, 0, 0);
   save_auto();
 
   if (stop_soon) goto stop_fuzzing;
@@ -7469,7 +7544,7 @@ int main(int argc, char** argv) {
   if (queue_cur) show_stats();
 
   write_bitmap();
-  write_stats_file(0, 0);
+  write_stats_file(0, 0, 0);
   save_auto();
 
 stop_fuzzing:
