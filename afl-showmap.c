@@ -24,7 +24,7 @@
 */
 #define _CRT_SECURE_NO_WARNINGS
 #define _CRT_RAND_S  
-#define VERSION             "2.35b"
+#define VERSION             "2.36b"
 
 #define AFL_MAIN
 
@@ -84,7 +84,8 @@ static u64 mem_limit = MEM_LIMIT;     /* Memory limit (MB)                 */
 
 static u8  quiet_mode,                /* Hide non-essential messages?      */
            edges_only,                /* Ignore hit counts?                */
-           cmin_mode;                 /* Generate output in afl-cmin mode? */
+           cmin_mode,                 /* Generate output in afl-cmin mode? */
+           binary_mode;               /* Write output as a binary map      */
 
 static volatile u8
            stop_soon,                 /* Ctrl-C pressed?                   */
@@ -101,7 +102,7 @@ static volatile u8
 #define AREP64(_sym)  AREP32(_sym), AREP32(_sym)
 #define AREP128(_sym) AREP64(_sym), AREP64(_sym)
 
-static u8 count_class_lookup[256] = {
+static const u8 count_class_human[256] = {
 
   /* 0 - 3:       4 */ 0, 1, 2, 3,
   /* 4 - 7:      +4 */ AREP4(4),
@@ -112,7 +113,18 @@ static u8 count_class_lookup[256] = {
 
 };
 
-static void classify_counts(u8* mem) {
+static const u8 count_class_binary[256] = {
+
+  /* 0 - 3:       4 */ 0, 1, 2, 4,
+  /* 4 - 7:      +4 */ AREP4(8),
+  /* 8 - 15:     +8 */ AREP8(16),
+  /* 16 - 31:   +16 */ AREP16(32),
+  /* 32 - 127:  +96 */ AREP64(64), AREP32(64),
+  /* 128+:     +128 */ AREP128(128)
+
+};
+
+static void classify_counts(u8* mem, const u8* map) {
 
   u32 i = MAP_SIZE;
 
@@ -126,7 +138,7 @@ static void classify_counts(u8* mem) {
   } else {
 
     while (i--) {
-      *mem = count_class_lookup[*mem];
+     *mem = map[*mem];
       mem++;
     }
 
@@ -264,8 +276,8 @@ static void setup_shm(void) {
 static u32 write_results(void) {
 
   s32 fd;
-  FILE* f;
   u32 i, ret = 0;
+
   u8  cco = !!getenv("AFL_CMIN_CRASHES_ONLY"),
       caa = !!getenv("AFL_CMIN_ALLOW_ANY");
 
@@ -287,27 +299,40 @@ static u32 write_results(void) {
 
   }
 
-  f = _fdopen(fd, "w");
+  if (binary_mode) {
 
-  if (!f) PFATAL("fdopen() failed");
+    for (i = 0; i < MAP_SIZE; i++)
+      if (trace_bits[i]) ret++;
 
-  for (i = 0; i < MAP_SIZE; i++) {
+    ck_write(fd, trace_bits, MAP_SIZE, out_file);
+    close(fd);
 
-    if (!trace_bits[i]) continue;
-    ret++;
+  } else {
 
-    if (cmin_mode) {
 
-      if (child_timed_out) break;
-      if (!caa && child_crashed != cco) break;
+    FILE* f = fdopen(fd, "w");
 
-      fprintf(f, "%u%u\n", trace_bits[i], i);
+    if (!f) PFATAL("fdopen() failed");
 
-    } else fprintf(f, "%06u:%u\n", i, trace_bits[i]);
+    for (i = 0; i < MAP_SIZE; i++) {
+
+      if (!trace_bits[i]) continue;
+      ret++;
+
+      if (cmin_mode) {
+
+        if (child_timed_out) break;
+        if (!caa && child_crashed != cco) break;
+
+        fprintf(f, "%u%u\n", trace_bits[i], i);
+
+      } else fprintf(f, "%06u:%u\n", i, trace_bits[i]);
+
+    }
+  
+    fclose(f);
 
   }
-  
-  fclose(f);
 
   return ret;
 
@@ -645,7 +670,8 @@ static void run_target(char** argv) {
     watchdog_enabled = 0;
   }
 
-  classify_counts(trace_bits);
+  classify_counts(trace_bits, binary_mode ?
+                  count_class_binary : count_class_human);
 
   if(!quiet_mode)
     SAYF(cRST "-- Program output ends --\n");
@@ -866,7 +892,7 @@ int main(int argc, char** argv) {
   dynamorio_dir = NULL;
   client_params = NULL;
 
-  while ((opt = getopt(argc, argv, "+o:m:t:A:D:eqZQ")) > 0)
+  while ((opt = getopt(argc, argv, "+o:m:t:A:D:eqZQb")) > 0)
 
     switch (opt) {
 
@@ -964,6 +990,14 @@ int main(int argc, char** argv) {
 
       case 'Q':
         FATAL("QEMU mode not supported on Windows");
+        break;
+
+      case 'b':
+
+        /* Secret undocumented mode. Writes output in raw binary format
+           similar to that dumped by afl-fuzz in <out_dir/queue/fuzz_bitmap. */
+
+        binary_mode = 1;
         break;
 
       default:
