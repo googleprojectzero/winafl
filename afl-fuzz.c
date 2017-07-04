@@ -7247,12 +7247,7 @@ int main(int argc, char** argv) {
         dynamorio_dir = optarg;
         break;
 
-      case 'M':
-
-        force_deterministic = 1;
-        /* Fall through */
-
-      case 'S': { /* secondary sync ID */
+      case 'M': { /* master sync ID */
 
           u8* c;
 
@@ -7269,9 +7264,10 @@ int main(int argc, char** argv) {
 
           }
 
-        }
+          force_deterministic = 1;
+          fuzzer_id = sync_id;
 
-        fuzzer_id = sync_id;
+        }
         break;
 
       case 'f': /* target file */
