@@ -3,6 +3,16 @@ ChangeLog
 =========
 
 ----------------------------------
+Version 1.09 (based on afl 2.43b):
+----------------------------------
+
+  - Brining WinAFL up to speed with AFL 2.43b
+    Contributed by Axel "0vercl0k" Souchet of MSRC Vulnerabilities and Mitigations Team
+
+  - Fixed a memory leak in fuzz_one
+    Contributed by juanvazquez
+
+----------------------------------
 Version 1.08 (based on afl 1.96b):
 ----------------------------------
 
