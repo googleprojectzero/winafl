@@ -36,8 +36,8 @@
 #include <io.h>
 #include <direct.h>
 
-#define VERSION "1.96b"
-#define WINAFL_VERSION "1.08"
+#define VERSION "2.43b"
+#define WINAFL_VERSION "1.09"
 
 #include "config.h"
 #include "types.h"
@@ -4705,7 +4705,7 @@ static u8 fuzz_one(char** argv) {
   u64 havoc_queued,  orig_hit_cnt, new_hit_cnt;
   u32 splice_cycle = 0, perf_score = 100, orig_perf, prev_cksum, eff_cnt = 1;
 
-  u8  ret_val = 1, doing_det = 0;;
+  u8  ret_val = 1, doing_det = 0;
 
   u8  a_collect[MAX_AUTO_EXTRA];
   u32 a_len = 0;
