@@ -7322,6 +7322,12 @@ int main(int argc, char** argv) {
         }
         break;
 
+      case 'S':
+
+        if (sync_id) FATAL("Multiple -S or -M options not supported");
+        sync_id = ck_strdup(optarg);
+        break;
+
       case 'f': /* target file */
 
         if (out_file) FATAL("Multiple -f options not supported");
