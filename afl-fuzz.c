@@ -3075,6 +3075,8 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 
       unique_crashes++;
 
+      last_crash_time = get_cur_time();
+
       last_crash_execs = total_execs;
 
       break;
