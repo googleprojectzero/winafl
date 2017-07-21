@@ -2,6 +2,16 @@
 ChangeLog
 =========
 
+-----------------------------------
+Version 1.09b (based on afl 2.43b):
+-----------------------------------
+
+  - Fixed slave mode (was broken in 1.09 update)
+    Contributed by Axel "0vercl0k" Souchet of MSRC Vulnerabilities and Mitigations Team
+
+  - Fixed missing last_crash_time (was broken in 1.09 update)
+    Contributed by x9090
+
 ----------------------------------
 Version 1.09 (based on afl 2.43b):
 ----------------------------------
