@@ -7,14 +7,6 @@ add_executable(test
   test.cpp
   )
 
-project(test_static)
-
-add_executable(test_static
-  test_static.cpp
-  afl-staticinstr.c
-  )
-
-set_target_properties(test_static PROPERTIES LINK_FLAGS "/PROFILE")
 
 project(test_gdiplus)
 
@@ -29,6 +21,7 @@ project(afl-showmap)
 add_executable(afl-showmap
   afl-showmap.c
   )
+
 
 project(afl-fuzz)
 
