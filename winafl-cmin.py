@@ -46,7 +46,7 @@ class AFLShowMapWorker(object):
         '''Takes the argparse namespace, and convert it to the list of options used
         to invoke afl-showmap.exe'''
         r = [
-            'afl-showmap.exe', '-q', '-o', trace_name
+            'afl-showmap.exe', '-q', '-D', args.dynamorio_dir, '-o', trace_name
         ]
 
         if args.time_limit > 0:
@@ -54,25 +54,21 @@ class AFLShowMapWorker(object):
         else:
             r.extend(['-t', 'none'])
 
-        if args.static_instr:
-            r.append('-Y')
+        r.append('--')
+        r.extend(['-target_module', args.target_module])
+
+        if args.target_method is None:
+            r.extend(['-target_offset', '0x%x' % args.target_offset])
         else:
-            r.extend(['-D', args.dynamorio_dir])
-            r.append('--')
-            r.extend(['-target_module', args.target_module])
+            r.extend(['-target_method', args.target_method])
 
-            if args.target_method is None:
-                r.extend(['-target_offset', '0x%x' % args.target_offset])
-            else:
-                r.extend(['-target_method', args.target_method])
+        r.extend(['-nargs', '%d' % args.nargs])
+        r.extend(['-covtype', args.covtype])
+        if args.call_convention is not None:
+            r.extend(['-call_convention', args.call_convention])
 
-            r.extend(['-nargs', '%d' % args.nargs])
-            r.extend(['-covtype', args.covtype])
-            if args.call_convention is not None:
-                r.extend(['-call_convention', args.call_convention])
-
-            for mod in args.coverage_modules:
-                r.extend(['-coverage_module', mod])
+        for mod in args.coverage_modules:
+            r.extend(['-coverage_module', mod])
 
         if args.edges_only:
             r.append('-e')
@@ -161,9 +157,6 @@ def setup_argparse():
 
              * Read from specific file with pattern
               winafl-cmin.py -D D:\\DRIO\\bin32 -t 100000 -i in -o minset -f prefix-@@-foo.ext -covtype edge -coverage_module m.dll -target_module test.exe -target_method fuzz -nargs 2 -- test.exe @@
-
-             * Typical use with static instrumentation
-              winafl-cmin.py -Y -t 100000 -i in -o minset -- test.instr.exe @@
             '''
         ), 100, replace_whitespace = False))
     )
@@ -172,7 +165,7 @@ def setup_argparse():
     group.add_argument(
         '-i', '--input', action = 'append', required = True,
         metavar = 'dir', help = 'input directory with the starting corpus.' \
-        ' Multiple input directories are supported'
+        'Multiples input directories are supported'
     )
     group.add_argument(
         '-o', '--output', required = True,
@@ -184,7 +177,7 @@ def setup_argparse():
     )
     group.add_argument(
         '--working-dir', default = os.getcwd(),
-        metavar = 'dir', help = 'directory containing afl-showmap.exe,'
+        metavar = 'dir', help = 'directory containing afl-showmap.exe,' \
         'winafl.dll, the target binary, etc.'
     )
     group.add_argument(
@@ -193,49 +186,41 @@ def setup_argparse():
     )
 
     group = parser.add_argument_group('instrumentation settings')
-    instr_type = group.add_mutually_exclusive_group(required = True)
-    instr_type.add_argument(
-        '-Y', '--static-instr', action = 'store_true',
-        help = 'use the static instrumentation mode'
-    )
-
-    instr_type.add_argument(
-        '-D', '--dynamorio_dir',
-        metavar = 'dir', help = 'directory containing DynamoRIO binaries (drrun, drconfig)'
-    )
-
     group.add_argument(
         '-covtype', choices = ('edge', 'bb'), default = 'bb',
         help = 'the type of coverage being recorded (defaults to bb)'
     )
     group.add_argument(
         '-call_convention', choices = ('stdcall', 'fastcall', 'thiscall', 'ms64'),
-        default = 'stdcall', help = 'the calling convention of the target_method'
+        help = 'the calling convention of the target_method'
     )
     group.add_argument(
-        '-coverage_module', dest = 'coverage_modules', default = None,
-        action = 'append', metavar = 'module', help = 'module for which to record coverage.'
-        ' Multiple module flags are supported'
+        '-coverage_module', dest = 'coverage_modules', action = 'append', required = True,
+        metavar = 'module', help = 'module for which to record coverage. Multiple module flags are supported'
     )
     group.add_argument(
-        '-target_module', default = None, metavar = 'module',
-        help = 'module which contains the target function to be fuzzed'
+        '-target_module', required = True,
+        metavar = 'module', help = 'module which contains the target function to be fuzzed'
     )
     group.add_argument(
-        '-nargs', type = int, default = None, metavar = 'nargs',
-        help = 'number of arguments the fuzzed method takes. This is used to save/restore'
-        ' the arguments between runs'
+        '-nargs', type = int, required = True,
+        metavar = 'nargs', help = 'number of arguments the fuzzed method takes. This is used to save/restore' \
+        'the arguments between runs'
+    )
+    group.add_argument(
+        '-D', '--dynamorio_dir', required = True,
+        metavar = 'dir', help = 'directory containing DynamoRIO binaries (drrun, drconfig)'
     )
 
-    group = group.add_mutually_exclusive_group()
+    group = group.add_mutually_exclusive_group(required = True)
     group.add_argument(
-        '-target_method', default = None, metavar = 'method',
-        help = 'name of the method to fuzz in persistent mode.'
-        ' A symbol for the method needs to be exported for this to work'
+        '-target_method', default = None,
+        metavar = 'method', help = 'name of the method to fuzz in persistent mode. A symbol for the' \
+        'method needs to be exported for this to work'
     )
     group.add_argument(
-        '-target_offset', default = None, type = target_offset, metavar = 'rva offset',
-        help = 'offset of the method to fuzz from the start of the module'
+        '-target_offset', type = target_offset,
+        metavar = 'rva offset', help = 'offset of the method to fuzz from the start of the module'
     )
 
     group = parser.add_argument_group('execution control settings')
@@ -250,7 +235,7 @@ def setup_argparse():
     # c:\dir\prefix@@suffix where @@ will be replaced with a unique identifier.
     group.add_argument(
         '-f', '--file-read', default = None,
-        metavar = 'file', help = 'location read by the fuzzed program. '
+        metavar = 'file', help = 'location read by the fuzzed program. ' \
         'Usage of @@ is encouraged to keep parallelization possible'
     )
 
@@ -304,41 +289,14 @@ def main(argc, argv):
 
     os.chdir(args.working_dir)
     logging.info('[+] CWD changed to %s.', args.working_dir)
-    if args.static_instr is True:
-        logging.info('[+] Dynamorio-less mode is enabled.')
-    else:
-        # Make sure we have all the arguments we need
-        if len(args.coverage_modules) == 0:
-            logging.error(
-                '[!] -coverage_module is a required option to use'
-                'the dynamic instrumentation'
-            )
-            return 1
 
-        if None in [args.target_module, args.nargs]:
-            logging.error(
-                '[!] , -target_module and -nargs are required'
-                ' options to use the dynamic instrumentation mode.'
-            )
-            return 1
-
-        if args.target_method is None and args.target_offset is None:
-            logging.error(
-                '[!] -target_method or -target_offset is required to use the'
-                ' dynamic instrumentation mode'
-            )
-            return 1
-
-        # If we are using DRIO, one of the thing we need is the DRIO client
-        if os.path.isfile('winafl.dll') is False:
-            logging.error(
-                '[!] winafl.dll needs to be in %s.', args.working_dir
-            )
-            return 1
-
-    # Regardless of DRIO being used or not, we need afl-showmap.exe
-    if os.path.isfile('afl-showmap.exe') is False:
-        logging.error('[!] afl-showmap.exe need to be in %s.', args.working_dir)
+    # Make sure winafl.dll and afl-showmap.exe are present in the CWD
+    if os.path.isfile('afl-showmap.exe') is False or \
+       os.path.isfile('winafl.dll') is False:
+        logging.error(
+            '[!] Both afl-showmap.exe and winafl.dll need to be in %s.',
+            args.working_dir
+        )
         return 1
 
     # Make sure the output directory doesn't exist yet
