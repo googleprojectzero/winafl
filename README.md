@@ -349,6 +349,8 @@ winafl-cmin.py -Y -t 100000 -i in -o minset -- test_static.instr.exe @@
 
 ### Building instrument.exe
 
+For convenicence, a version of instrument.exe confirmed to work with WinAFL is included in the bin32 directory. If you want to build it yourself follow the instructions below.
+
 In order to clone [syzygy](https://github.com/google/syzygy/)'s repository you can follow the instructions outlined here: [SyzygyDevelopmentGuide](https://github.com/google/syzygy/wiki/SyzygyDevelopmentGuide). Once you have `depot_tools` and the repository cloned, you can compile instrument.exe like this:
 
 ```
