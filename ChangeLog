@@ -2,6 +2,13 @@
 ChangeLog
 =========
 
+----------------------------------
+Version 1.10 (based on afl 2.43b):
+----------------------------------
+
+  - Add static instrumentation mode
+    Contributed by Axel "0vercl0k" Souchet of MSRC Vulnerabilities and Mitigations Team
+
 -----------------------------------
 Version 1.09b (based on afl 2.43b):
 -----------------------------------
