@@ -46,8 +46,11 @@ class AFLShowMapWorker(object):
         '''Takes the argparse namespace, and convert it to the list of options used
         to invoke afl-showmap.exe'''
         r = [
-            'afl-showmap.exe', '-q', '-o', trace_name
+            'afl-showmap.exe', '-o', trace_name
         ]
+
+        if os.getenv('AFL_NO_SINKHOLE') is None:
+            r.append('-q')
 
         if args.time_limit > 0:
             r.extend(['-t', '%d' % args.time_limit])
@@ -267,6 +270,10 @@ def setup_argparse():
         '-w', '--workers', type = int, default = multiprocessing.cpu_count(),
         metavar = 'n', help = 'The number of worker processes (default: cpu count)'
     )
+    group.add_argument(
+        '--skip-dry-run', action = 'store_true', default = False,
+        help = 'Skip the dry-run step even if it failed'
+    )
     parser.add_argument(
         'target_cmdline', nargs = argparse.REMAINDER,
         help = 'target command line'
@@ -295,6 +302,15 @@ def main(argc, argv):
     # strip it off manually here.
     if args.target_cmdline[0] == '--':
         del args.target_cmdline[0]
+
+    # If we are not seeing the '@@' marker somewhere and that we are not
+    # specifying an input file with -f, then it means something is wrong
+    if args.file_read is None and '@@' not in args.target_cmdline:
+        logging.error(
+            '[!] The target command line needs to include the "@@" marker to'
+            ' specify the input file.'
+        )
+        return 1
 
     if os.path.isdir(args.working_dir) is False:
         logging.error(
@@ -375,7 +391,9 @@ def main(argc, argv):
             '  Return codes matching? %r',
             results[0].returncode == results[1].returncode
         )
-        return 1
+
+        if not args.skip_dry_run:
+            return 1
 
     logging.info('[+] OK, %d tuples recorded.', len(results[0].tuples))
 
