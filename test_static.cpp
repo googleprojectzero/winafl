@@ -1,8 +1,13 @@
 /*
-   WinAFL - A simple test binary that crashes on certain inputs:
-     - 'test1' with a normal write access violation at NULL
-     - 'test2' with a /GS stack cookie violation
-     - 'test3' with a hang
+   WinAFL - A simple test binary that exercises various behaviors
+   depending on inputs:
+     - 'test1' crashes with a normal write access violation at NULL
+     - 'test2' crashes with a /GS stack cookie violation
+     - 'test3' triggers a hang
+     - 'test4' triggers an exception that is caught and handled
+     - 'test5' triggers an OutputDebugString
+     - 'test6' triggers an allocation of 120MB (and a crash if the
+               allocation fails)
    -------------------------------------------------------------
 
    Written by Axel "0vercl0k" Souchet <0vercl0k@tuxfamily.org>
@@ -95,6 +100,12 @@ int test(int argc, char **argv) {
     }
     else if (c == '5') {
         OutputDebugString(TEXT("hello!"));
+    }
+    else if (c == '6') {
+        printf("allocating 120MB\n");
+        char *buffer = (char*)malloc((1024 * 1024) * 120);
+        *buffer = 0;
+        free(buffer);
     }
     else {
         printf("Error 5\n");
