@@ -24,6 +24,7 @@ import shutil
 import subprocess
 import sys
 import time
+import re
 from textwrap import dedent, wrap
 
 nul = open(os.devnull, 'wb')
@@ -46,7 +47,7 @@ class AFLShowMapWorker(object):
         '''Takes the argparse namespace, and convert it to the list of options used
         to invoke afl-showmap.exe'''
         r = [
-            'afl-showmap.exe', '-o', trace_name
+            'afl-showmap.exe', '-o', trace_name, '-m', args.memory_limit
         ]
 
         if os.getenv('AFL_NO_SINKHOLE') is None:
@@ -145,6 +146,13 @@ def target_offset(opt):
     except:
         raise argparse.ArgumentTypeError('must be an integer')
 
+def memory_limit(opt):
+    '''Validates that the -m parameter is properly formated, else
+    raises an ArgumentTypeError exception back to the argparse parser.'''
+    if re.match('^\d+[TGkM]{0,1}$', opt) or opt == 'none':
+        return opt
+    raise argparse.ArgumentTypeError('must be an integer followed by either: '
+                                     'T, G, M, k or nothing; or none')
 
 def setup_argparse():
     '''Sets up the argparse configuration.'''
@@ -174,7 +182,7 @@ def setup_argparse():
     group = parser.add_argument_group('basic parameters')
     group.add_argument(
         '-i', '--input', action = 'append', required = True,
-        metavar = 'dir', help = 'input directory with the starting corpus.' \
+        metavar = 'dir', help = 'input directory with the starting corpus.'
         ' Multiple input directories are supported'
     )
     group.add_argument(
@@ -245,6 +253,10 @@ def setup_argparse():
     group.add_argument(
         '-t', '--time-limit', type = int, default = 0,
         metavar = 'msec', help = 'timeout for each run (none)'
+    )
+    group.add_argument(
+        '-m', '--memory-limit', default = 'none', type = memory_limit,
+        metavar = 'megs', help = 'memory limit for child process'
     )
     # Note(0vercl0k): If you use -f, which means you want the input file at
     # a specific location (and a specific name), we have to force the pool

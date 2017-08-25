@@ -2039,6 +2039,8 @@ static void create_target_process(char** argv) {
   size_t pidsize;
   BOOL inherit_handles = TRUE;
 
+  HANDLE hJob = NULL;
+  JOBOBJECT_EXTENDED_LIMIT_INFORMATION job_limit;
   STARTUPINFO si;
   PROCESS_INFORMATION pi;
 
@@ -2054,16 +2056,15 @@ static void create_target_process(char** argv) {
     20000,                    // client time-out
     NULL);                    // default security attribute
 
-  if (pipe_handle == INVALID_HANDLE_VALUE)
-  {
-      FATAL("CreateNamedPipe failed, GLE=%d.\n", GetLastError());
+  if (pipe_handle == INVALID_HANDLE_VALUE) {
+    FATAL("CreateNamedPipe failed, GLE=%d.\n", GetLastError());
   }
 
   target_cmd = argv_to_cmd(argv);
 
-  ZeroMemory( &si, sizeof(si) );
+  ZeroMemory(&si, sizeof(si));
   si.cb = sizeof(si);
-  ZeroMemory( &pi, sizeof(pi) );
+  ZeroMemory(&pi, sizeof(pi));
 
   if(sinkhole_stds) {
     si.hStdOutput = si.hStdError = devnul_handle;
@@ -2090,26 +2091,54 @@ static void create_target_process(char** argv) {
     );
   }
 
-  if(!CreateProcess(NULL, cmd, NULL, NULL, inherit_handles, /*CREATE_NO_WINDOW*/0, NULL, NULL, &si, &pi)) {
+  if(mem_limit != 0) {
+    hJob = CreateJobObject(NULL, NULL);
+    if(hJob == NULL) {
+      FATAL("CreateJobObject failed, GLE=%d.\n", GetLastError());
+    }
+
+    ZeroMemory(&job_limit, sizeof(job_limit));
+    job_limit.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_PROCESS_MEMORY;
+    job_limit.ProcessMemoryLimit = mem_limit * 1024 * 1024;
+
+    if(!SetInformationJobObject(
+      hJob,
+      JobObjectExtendedLimitInformation,
+      &job_limit,
+      sizeof(job_limit)
+    )) {
+      FATAL("SetInformationJobObject failed, GLE=%d.\n", GetLastError());
+    }
+  }
+
+  if(!CreateProcess(NULL, cmd, NULL, NULL, inherit_handles, CREATE_SUSPENDED, NULL, NULL, &si, &pi)) {
     FATAL("CreateProcess failed, GLE=%d.\n", GetLastError());
   }
 
   child_handle = pi.hProcess;
   child_thread_handle = pi.hThread;
 
+  if(mem_limit != 0) {
+    if(!AssignProcessToJobObject(hJob, child_handle)) {
+      FATAL("AssignProcessToJobObject failed, GLE=%d.\n", GetLastError());
+    }
+  }
+
+  ResumeThread(child_thread_handle);
+
   watchdog_timeout_time = get_cur_time() + exec_tmout;
   watchdog_enabled = 1;
 
   if(!ConnectNamedPipe(pipe_handle, NULL)) {
     if(GetLastError() != ERROR_PIPE_CONNECTED) {
-        FATAL("ConnectNamedPipe failed, GLE=%d.\n", GetLastError());
+      FATAL("ConnectNamedPipe failed, GLE=%d.\n", GetLastError());
     }
   }
 
   watchdog_enabled = 0;
 
-  //by the time pipe has connected the pidfile must have been created
   if(drioless == 0) {
+    //by the time pipe has connected the pidfile must have been created
     fp = fopen(pidfile, "rb");
     if(!fp) {
       FATAL("Error opening pidfile.txt");
@@ -2121,6 +2150,7 @@ static void create_target_process(char** argv) {
     fread(buf, pidsize, 1, fp);
     buf[pidsize] = 0;
     fclose(fp);
+    remove(pidfile);
     child_pid = atoi(buf);
     free(buf);
     ck_free(pidfile);
