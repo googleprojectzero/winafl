@@ -43,6 +43,11 @@ add_executable(afl-fuzz
   afl-fuzz.c
   )
 
+project(afl-tmin)
+
+add_executable(afl-tmin
+  afl-tmin.c
+  )
 
 
 project(WinAFL)
