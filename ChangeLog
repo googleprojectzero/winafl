@@ -3,6 +3,13 @@ ChangeLog
 =========
 
 ----------------------------------
+Version 1.12 (based on afl 2.43b):
+----------------------------------
+
+  - Windows port of afl-tmin
+    Contributed by Axel "0vercl0k" Souchet of MSRC Vulnerabilities and Mitigations Team
+
+----------------------------------
 Version 1.11 (based on afl 2.43b):
 ----------------------------------
 
