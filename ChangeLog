@@ -3,6 +3,106 @@ ChangeLog
 =========
 
 ----------------------------------
+Version 1.12 (based on afl 2.43b):
+----------------------------------
+
+  - Windows port of afl-tmin
+    Contributed by Axel "0vercl0k" Souchet of MSRC Vulnerabilities and Mitigations Team
+
+----------------------------------
+Version 1.11 (based on afl 2.43b):
+----------------------------------
+
+  - Add support for setting a memory limit (-m flag)
+    Contributed by Axel "0vercl0k" Souchet of MSRC Vulnerabilities and Mitigations Team
+
+----------------------------------
+Version 1.10 (based on afl 2.43b):
+----------------------------------
+
+  - Add static instrumentation mode
+    Contributed by Axel "0vercl0k" Souchet of MSRC Vulnerabilities and Mitigations Team
+
+-----------------------------------
+Version 1.09b (based on afl 2.43b):
+-----------------------------------
+
+  - Fixed slave mode (broken by 1.09 update)
+    Contributed by Axel "0vercl0k" Souchet of MSRC Vulnerabilities and Mitigations Team
+
+  - Fixed missing last_crash_time (broken by 1.09 update)
+    Contributed by x9090
+
+----------------------------------
+Version 1.09 (based on afl 2.43b):
+----------------------------------
+
+  - Bringing WinAFL up to speed with AFL 2.43b
+    Contributed by Axel "0vercl0k" Souchet of MSRC Vulnerabilities and Mitigations Team
+
+  - Fixed a memory leak in fuzz_one
+    Contributed by juanvazquez
+
+----------------------------------
+Version 1.08 (based on afl 1.96b):
+----------------------------------
+
+  - It is now possible to collect coverage only from a thread that executed
+    target function using -thread_coverage flag
+
+  - When -target_method flag is used, symbols are now looked up from pdb files
+    in addition to exported symbols
+
+  - Added a missing call to classify_counts() from run_target()
+
+----------------------------------
+Version 1.07 (based on afl 1.96b):
+----------------------------------
+
+  - Previous_offset is now stored in TLS.
+    Edge coverage for multithreaded targets should now be more usable.
+
+----------------------------------
+Version 1.06 (based on afl 1.96b):
+----------------------------------
+
+  - Windows port of afl-cmin
+    Contributed by Axel "0vercl0k" Souchet of MSRC Vulnerabilities and Mitigations Team
+  - Use exe_name instead of the preferred name
+    Contributed by Axel "0vercl0k" Souchet of MSRC Vulnerabilities and Mitigations Team
+  - Add option to choose the calling convention
+    Contributed by shawndenbow
+  - Fix for building on VS2015
+    Contributed by b1ack0wl
+
+----------------------------------
+Version 1.05 (based on afl 1.96b):
+----------------------------------
+
+  - Windows port of afl-showmap
+    Contributed by Axel "0vercl0k" Souchet of MSRC Vulnerabilities and Mitigations Team
+  - Expaded README a bit.
+
+----------------------------------
+Version 1.04 (based on afl 1.96b):
+----------------------------------
+
+  Various fixes / improvements contributed by Axel "0vercl0k" Souchet:
+  - Mute stdout/stderr unless AFL_NO_SINKHOLE env variable is set.
+  - Allow several slaveless instances to be run on the same machine.
+  - Fix getopt to properly handle options without parameters.
+  - Automatically remove the child pid file.
+  - Case insensitive module name comparison.
+  - More debugging messages.
+
+----------------------------------
+Version 1.03 (based on afl 1.96b):
+----------------------------------
+
+  - Fixed dictionary loading.
+	Reported by Hugo Meier.
+
+----------------------------------
 Version 1.02 (based on afl 1.96b):
 ----------------------------------
 
