@@ -292,7 +292,18 @@ def setup_argparse():
     )
     return parser.parse_args()
 
-
+def do_unique_copy(filepath, dest_path):
+    filename = os.path.basename(filepath)
+    new_dest = os.path.join(dest_path, filename)
+    
+    id = 0
+    # Avoid duplicated filename in the destination folder
+    while os.path.exists(new_dest):
+        new_dest = os.path.join(dest_path, filename+"_"+str(id))
+        
+    # Now we can copy the file to destination
+    shutil.copy(filepath, new_dest)
+    
 def main(argc, argv):
     print 'corpus minimization tool for WinAFL by <0vercl0k@tuxfamily.org>'
     print 'Based on WinAFL by <ifratric@google.com>'
@@ -324,6 +335,13 @@ def main(argc, argv):
         )
         return 1
 
+    # Another sanity check on the root of output directory
+    if os.path.isdir(os.path.split(args.output)[0]) is False:
+        logging.error(
+            '[!] The output directory %r is not a directory', args.output
+        )
+        return 1
+        
     if os.path.isdir(args.working_dir) is False:
         logging.error(
             '[!] The working directory %r is not a directory', args.working_dir
@@ -644,7 +662,7 @@ def main(argc, argv):
         )
         os.mkdir(args.output)
         for file_path in minset:
-            shutil.copy(file_path, args.output)
+            do_unique_copy(file_path, args.output)
 
     logging.info('[+] Time elapsed: %d seconds', time.time() - t0)
     return 0
