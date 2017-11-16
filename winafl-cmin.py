@@ -300,6 +300,7 @@ def do_unique_copy(filepath, dest_path):
     # Avoid duplicated filename in the destination folder
     while os.path.exists(new_dest):
         new_dest = os.path.join(dest_path, filename+"_"+str(id))
+        id += 1
         
     # Now we can copy the file to destination
     shutil.copy(filepath, new_dest)
