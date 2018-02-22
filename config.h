@@ -52,6 +52,11 @@
 
 #define EXEC_TM_ROUND       20
 
+/* Defauly delay in milliseconds to let the target open a socket and start listen for
+   incoming packages.
+ */
+#define SOCKET_INIT_DELAY 30000
+
 /* Default memory limit for child process (MB): */
 
 #ifndef __x86_64__ 
