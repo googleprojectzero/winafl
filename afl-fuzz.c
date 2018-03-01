@@ -1647,7 +1647,7 @@ static void load_extras(u8* dir) {
 
   ACTF("Loading extra dictionary from '%s' (level %u)...", dir, dict_level);
 
-  if(in_dir[strlen(dir)-1] == '\\') {
+  if(dir[strlen(dir)-1] == '\\') {
     pattern = alloc_printf("%s*", dir);
   } else {
     pattern = alloc_printf("%s\\*", dir);
