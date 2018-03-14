@@ -21,7 +21,6 @@
    limitations under the License.
 
  */
-
 #define _CRT_SECURE_NO_WARNINGS
 
 #define AFL_MAIN
@@ -32,6 +31,7 @@
 
 #define _CRT_RAND_S
 #include <windows.h>
+#include <TlHelp32.h>
 #include <stdarg.h>
 #include <io.h>
 #include <direct.h>
@@ -213,6 +213,8 @@ static u64 total_bitmap_size,         /* Total bit count for all bitmaps  */
 
 static u32 cpu_core_count;            /* CPU core count                   */
 
+static u64 cpu_aff = 0;       	      /* Selected CPU core                */
+
 static FILE* plot_file;               /* Gnuplot output file              */
 
 struct queue_entry {
@@ -381,6 +383,140 @@ static void shuffle_ptrs(void** ptrs, u32 cnt) {
 
   }
 
+}
+
+
+static u64 get_process_affinity(u32 process_id) {
+
+  /* if we can't get process affinity we treat it as if he doesn't have affinity */
+  u64 affinity = -1ULL;
+  DWORD_PTR process_affinity_mask = 0;
+  DWORD_PTR system_affinity_mask = 0;
+
+  HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, process_id);
+  if (process == NULL) {
+    return affinity;
+  }
+
+  if (GetProcessAffinityMask(process, &process_affinity_mask, &system_affinity_mask)) {
+    affinity = (u64)process_affinity_mask;
+  }
+
+  CloseHandle(process);
+
+  return affinity;
+}
+
+static u32 count_mask_bits(u64 mask) {
+
+  u32 count = 0;
+
+  while (mask) {
+    if (mask & 1) {
+      count++;
+    }
+    mask >>= 1;
+  }
+
+  return count;
+}
+
+static u32 get_bit_idx(u64 mask) {
+
+  for (u32 i = 0; i < 64; i++) {
+    if (mask & (1ULL << i)) {
+      return i;
+    }
+  }
+
+  return 0;
+}
+
+static void bind_to_free_cpu(void) {
+
+  u8 cpu_used[64];
+  u32 i = 0;
+  PROCESSENTRY32 process_entry;
+  HANDLE process_snap = INVALID_HANDLE_VALUE;
+
+  memset(cpu_used, 0, sizeof(cpu_used));
+
+  if (cpu_core_count < 2) return;
+
+  /* Currently winafl doesn't support more than 64 cores */
+  if (cpu_core_count > 64) {
+    SAYF("\n" cLRD "[-] " cRST
+    "Uh-oh, looks like you have %u CPU cores on your system\n"
+    "    winafl doesn't support more than 64 cores at the momement\n"
+    "    you can set AFL_NO_AFFINITY and try again.\n",
+    cpu_core_count);
+    FATAL("Too many cpus for automatic binding");
+  }
+
+  if (getenv("AFL_NO_AFFINITY")) {
+
+    WARNF("Not binding to a CPU core (AFL_NO_AFFINITY set).");
+    return;
+  }
+
+  ACTF("Checking CPU core loadout...");
+
+  /* Introduce some jitter, in case multiple AFL tasks are doing the same
+  thing at the same time... */
+
+  srand(GetTickCount() + GetCurrentProcessId());
+  Sleep(R(1000) * 3);
+
+  process_snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  if (process_snap == INVALID_HANDLE_VALUE) {
+    FATAL("Failed to create snapshot");
+  }
+
+  process_entry.dwSize = sizeof(PROCESSENTRY32);
+  if (!Process32First(process_snap, &process_entry)) {
+    CloseHandle(process_snap);
+    FATAL("Failed to enumerate processes");
+  }
+
+  do {
+    unsigned long cpu_idx = 0;
+    u64 affinity = get_process_affinity(process_entry.th32ProcessID);
+
+    if ((affinity == 0) || (count_mask_bits(affinity) > 1)) continue;
+
+    cpu_idx = get_bit_idx(affinity);
+    cpu_used[cpu_idx] = 1;
+  } while (Process32Next(process_snap, &process_entry));
+
+  CloseHandle(process_snap);
+
+  /* If the user only uses subset of the core, prefer non-sequential cores
+	 to avoid pinning two hyper threads of the same core */
+  for(i = 0; i < cpu_core_count; i += 2) if (!cpu_used[i]) break;
+
+  /* Fallback to the sequential scan */
+  if (i >= cpu_core_count) {
+	for(i = 0; i < cpu_core_count; i++) if (!cpu_used[i]) break;
+  }
+
+  if (i == cpu_core_count) {
+    SAYF("\n" cLRD "[-] " cRST
+    "Uh-oh, looks like all %u CPU cores on your system are allocated to\n"
+    "    other instances of afl-fuzz (or similar CPU-locked tasks). Starting\n"
+    "    another fuzzer on this machine is probably a bad plan, but if you are\n"
+    "    absolutely sure, you can set AFL_NO_AFFINITY and try again.\n",
+    cpu_core_count);
+
+    FATAL("No more free CPU cores");
+
+  }
+
+  OKF("Found a free CPU core, binding to #%u.", i);
+
+  cpu_aff = 1ULL << i;
+  if (!SetProcessAffinityMask(GetCurrentProcess(), (DWORD_PTR)cpu_aff)) {
+    FATAL("Failed to set process affinity");
+  }
 }
 
 
@@ -2097,15 +2233,22 @@ static void create_target_process(char** argv) {
     );
   }
 
-  if(mem_limit != 0) {
+  if(mem_limit || cpu_aff) {
     hJob = CreateJobObject(NULL, NULL);
     if(hJob == NULL) {
       FATAL("CreateJobObject failed, GLE=%d.\n", GetLastError());
     }
 
     ZeroMemory(&job_limit, sizeof(job_limit));
-    job_limit.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_PROCESS_MEMORY;
-    job_limit.ProcessMemoryLimit = mem_limit * 1024 * 1024;
+    if (mem_limit) {
+      job_limit.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_PROCESS_MEMORY;
+      job_limit.ProcessMemoryLimit = mem_limit * 1024 * 1024;
+    }
+	
+    if (cpu_aff) {
+      job_limit.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_AFFINITY;
+      job_limit.BasicLimitInformation.Affinity = (DWORD_PTR)cpu_aff;
+    }
 
     if(!SetInformationJobObject(
       hJob,
@@ -2124,7 +2267,7 @@ static void create_target_process(char** argv) {
   child_handle = pi.hProcess;
   child_thread_handle = pi.hThread;
 
-  if(mem_limit != 0) {
+  if(mem_limit || cpu_aff) {
     if(!AssignProcessToJobObject(hJob, child_handle)) {
       FATAL("AssignProcessToJobObject failed, GLE=%d.\n", GetLastError());
     }
@@ -7002,20 +7145,13 @@ static void get_core_count(void) {
 #endif /* ^__APPLE__ */
 
 #else
-
   /* On Linux, a simple way is to look at /proc/stat, especially since we'd
      be parsing it anyway for other reasons later on. */
 
-  FILE* f = fopen("\\proc\\stat", "r");
-  u8 tmp[1024];
+  SYSTEM_INFO sys_info = { 0 };
+  GetSystemInfo(&sys_info);
+  cpu_core_count = sys_info.dwNumberOfProcessors;
 
-  if (!f) return;
-
-  while (fgets(tmp, sizeof(tmp), f))
-    if (!strncmp(tmp, "cpu", 3) && isdigit(tmp[3])) cpu_core_count++;
-
-  fclose(f);
-  
 #endif /* ^(__APPLE__ || __FreeBSD__ || __OpenBSD__) */
 
   if (cpu_core_count) {
@@ -7562,6 +7698,9 @@ int main(int argc, char** argv) {
   check_if_tty();
 
   get_core_count();
+
+  bind_to_free_cpu();
+
   check_crash_handling();
   check_cpu_governor();
 

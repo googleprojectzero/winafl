@@ -67,7 +67,7 @@ typedef int64_t  s64;
 #define SWAP16(x) (((x) >> 8) | ((x) << 8))
 #define SWAP32(x) (((x) >> 24) | (((x) & 0x00FF0000) >> 8) | (((x) & 0x0000FF00) << 8) | ((x) << 24))
 
-#define R(x) (random() % (x))
+#define R(x) (rand() % (x))
 
 #define STRINGIFY_INTERNAL(x) #x
 #define STRINGIFY(x) STRINGIFY_INTERNAL(x)
