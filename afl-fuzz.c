@@ -1437,6 +1437,12 @@ static void read_testcases(void) {
     if (_access(fn, 0) || (st_size < 0))
       PFATAL("Unable to access '%s'", fn);
 
+    if (st_size == 0) {
+      ck_free(fn);
+      ck_free(dfn);
+      continue;
+    }
+
     if (st_size > MAX_FILE) 
       FATAL("Test case '%s' is too big (%s, limit is %s)", fn,
             DMS(st_size), DMS(MAX_FILE));
