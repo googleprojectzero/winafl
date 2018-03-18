@@ -7456,6 +7456,23 @@ int getopt(int argc, char **argv, char *optstring) {
   }
 }
 
+void enable_ansi_console(void) {
+  // Set output mode to handle virtual terminal sequences
+  HANDLE console_handle = GetStdHandle(STD_OUTPUT_HANDLE);
+  if (console_handle == INVALID_HANDLE_VALUE) {
+    return;
+  }
+
+  DWORD mode = 0;
+  if (!GetConsoleMode(console_handle, &mode)) {
+    return;
+  }
+
+  mode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+  // Ignore errors
+  SetConsoleMode(console_handle, mode);
+}
+
 /* Main entry point */
 int main(int argc, char** argv) {
 
@@ -7468,6 +7485,10 @@ int main(int argc, char** argv) {
   char** use_argv;
 
   setup_watchdog_timer();
+
+#ifdef USE_COLOR
+  enable_ansi_console();
+#endif
 
   SAYF("WinAFL " WINAFL_VERSION " by <ifratric@google.com>\n");
   SAYF("Based on AFL " cBRI VERSION cRST " by <lcamtuf@google.com>\n");

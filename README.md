@@ -92,6 +92,9 @@ cmake -G"Visual Studio 10 Win64" .. -DDynamoRIO_DIR=..\path\to\DynamoRIO\cmake
 cmake --build . --config Release
 ```
 
+For color support (Windows 10 Anniversary edition or higher), add
+`-DUSE_COLOR=1` to the cmake configuration line.
+
 ## Using WinAFL
 
 Note: If you are using pre-built binaries you'll need to download DynamoRIO
