@@ -423,7 +423,9 @@ static u32 count_mask_bits(u64 mask) {
 
 static u32 get_bit_idx(u64 mask) {
 
-  for (u32 i = 0; i < 64; i++) {
+  u32 i;
+	
+  for (i = 0; i < 64; i++) {
     if (mask & (1ULL << i)) {
       return i;
     }
