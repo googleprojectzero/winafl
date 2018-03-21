@@ -492,6 +492,16 @@ createfilea_interceptor(void *wrapcxt, INOUT void **user_data)
         dr_fprintf(winafl_data.log, "In OpenFileA, reading %s\n", filename);
 }
 
+static void
+verfierstopmessage_interceptor_pre(void *wrapctx, INOUT void **user_data)
+{
+    EXCEPTION_RECORD exception_record = { 0 };
+    dr_exception_t dr_exception = { 0 };
+    dr_exception.record = &exception_record;
+    exception_record.ExceptionCode = STATUS_HEAP_CORRUPTION;
+
+    onexception(NULL, &dr_exception);
+}
 
 static void
 event_module_unload(void *drcontext, const module_data_t *info)
@@ -538,6 +548,11 @@ event_module_load(void *drcontext, const module_data_t *info, bool loaded)
             to_wrap = (app_pc)dr_get_proc_address(info->handle, "CreateFileA");
             drwrap_wrap(to_wrap, createfilea_interceptor, NULL);
         }
+    }
+
+    if (_stricmp(module_name, "verifier.dll") == 0) {
+        to_wrap = (app_pc)dr_get_proc_address(info->handle, "VerifierStopMessage");
+        drwrap_wrap(to_wrap,  verfierstopmessage_interceptor_pre, NULL);
     }
 
     module_table_load(module_table, info);
