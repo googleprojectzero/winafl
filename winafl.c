@@ -181,6 +181,7 @@ onexception(void *drcontext, dr_exception_t *excpt) {
     if((exception_code == EXCEPTION_ACCESS_VIOLATION) ||
        (exception_code == EXCEPTION_ILLEGAL_INSTRUCTION) ||
        (exception_code == EXCEPTION_PRIV_INSTRUCTION) ||
+       (exception_code == STATUS_HEAP_CORRUPTION) ||
        (exception_code == EXCEPTION_STACK_OVERFLOW)) {
             if(options.debug_mode) {
                 dr_fprintf(winafl_data.log, "crashed\n");
