@@ -49,6 +49,10 @@
 #define STATUS_FATAL_APP_EXIT ((DWORD)0x40000015L)
 #endif
 
+#ifndef STATUS_HEAP_CORRUPTION
+#define STATUS_HEAP_CORRUPTION 0xC0000374
+#endif
+
 static uint verbose;
 
 #define NOTIFY(level, fmt, ...) do {          \
@@ -190,6 +194,7 @@ onexception(void *drcontext, dr_exception_t *excpt) {
     if((exception_code == EXCEPTION_ACCESS_VIOLATION) ||
        (exception_code == EXCEPTION_ILLEGAL_INSTRUCTION) ||
        (exception_code == EXCEPTION_PRIV_INSTRUCTION) ||
+       (exception_code == EXCEPTION_INT_DIVIDE_BY_ZERO) ||
        (exception_code == STATUS_HEAP_CORRUPTION) ||
        (exception_code == EXCEPTION_STACK_OVERFLOW) ||
        (exception_code == STATUS_STACK_BUFFER_OVERRUN) ||
@@ -213,7 +218,7 @@ static void event_thread_init(void *drcontext)
   if(options.thread_coverage) {
     thread_data[1] = winafl_data.fake_afl_area;
   } else {
-    thread_data[0] = 0;
+    thread_data[1] = 0;
   }
   drmgr_set_tls_field(drcontext, winafl_tls_field, thread_data);
 }

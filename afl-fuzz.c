@@ -37,7 +37,7 @@
 #include <direct.h>
 
 #define VERSION "2.43b"
-#define WINAFL_VERSION "1.11"
+#define WINAFL_VERSION "1.13"
 
 #include "config.h"
 #include "types.h"
@@ -61,6 +61,9 @@
 #  include <sys/sysctl.h>
 #endif /* __APPLE__ || __FreeBSD__ || __OpenBSD__ */
 
+#ifndef ENABLE_VIRTUAL_TERMINAL_PROCESSING
+#define ENABLE_VIRTUAL_TERMINAL_PROCESSING 0x0004
+#endif
 
 /* Lots of globals, but mostly for the status UI and other things where it
    really makes no sense to haul them around as function parameters. */
@@ -2414,7 +2417,13 @@ static void setup_watchdog_timer() {
 }
 
 static int is_child_running() {
-   return (child_handle && (WaitForSingleObject(child_handle, 0 ) == WAIT_TIMEOUT));
+  int ret;
+
+  EnterCriticalSection(&critical_section);
+  ret = (child_handle && (WaitForSingleObject(child_handle, 0 ) == WAIT_TIMEOUT));
+  LeaveCriticalSection(&critical_section);
+
+  return ret;
 }
 
 /* Execute target application, monitoring for timeouts. Return status
@@ -3442,7 +3451,7 @@ static void write_stats_file(double bitmap_cvg, double stability, double eps) {
              "afl_banner        : %s\n"
              "afl_version       : " VERSION "\n"
              "command_line      : %s\n",
-             start_time / 1000, get_cur_time() / 1000, 0,
+             start_time / 1000, get_cur_time() / 1000, GetCurrentProcessId(),
              queue_cycle ? (queue_cycle - 1) : 0, total_execs, eps,
              queued_paths, queued_favored, queued_discovered, queued_imported,
              max_depth, current_entry, pending_favored, pending_not_fuzzed,
@@ -7458,12 +7467,12 @@ int getopt(int argc, char **argv, char *optstring) {
 
 void enable_ansi_console(void) {
   // Set output mode to handle virtual terminal sequences
+  DWORD mode = 0;
   HANDLE console_handle = GetStdHandle(STD_OUTPUT_HANDLE);
   if (console_handle == INVALID_HANDLE_VALUE) {
     return;
   }
 
-  DWORD mode = 0;
   if (!GetConsoleMode(console_handle, &mode)) {
     return;
   }
