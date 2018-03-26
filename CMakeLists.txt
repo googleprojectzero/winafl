@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 2.6)
 
+if (${USE_COLOR})
+    add_definitions(-DUSE_COLOR)
+endif()
 
 project(test)
 
