@@ -37,8 +37,17 @@
 #include "limits.h"
 #include <string.h>
 #include <stdlib.h>
+#include <windows.h>
 
 #define UNKNOWN_MODULE_ID USHRT_MAX
+
+#ifndef PF_FASTFAIL_AVAILABLE
+#define PF_FASTFAIL_AVAILABLE 23
+#endif
+
+#ifndef STATUS_FATAL_APP_EXIT
+#define STATUS_FATAL_APP_EXIT ((DWORD)0x40000015L)
+#endif
 
 static uint verbose;
 
@@ -182,7 +191,9 @@ onexception(void *drcontext, dr_exception_t *excpt) {
        (exception_code == EXCEPTION_ILLEGAL_INSTRUCTION) ||
        (exception_code == EXCEPTION_PRIV_INSTRUCTION) ||
        (exception_code == STATUS_HEAP_CORRUPTION) ||
-       (exception_code == EXCEPTION_STACK_OVERFLOW)) {
+       (exception_code == EXCEPTION_STACK_OVERFLOW) ||
+       (exception_code == STATUS_STACK_BUFFER_OVERRUN) ||
+       (exception_code == STATUS_FATAL_APP_EXIT)) {
             if(options.debug_mode) {
                 dr_fprintf(winafl_data.log, "crashed\n");
             } else {
@@ -504,6 +515,38 @@ verfierstopmessage_interceptor_pre(void *wrapctx, INOUT void **user_data)
 }
 
 static void
+isprocessorfeaturepresent_interceptor_pre(void *wrapcxt, INOUT void **user_data)
+{
+    DWORD feature = (DWORD)drwrap_get_arg(wrapcxt, 0);
+    *user_data = (void*)feature;
+}
+
+static void
+isprocessorfeaturepresent_interceptor_post(void *wrapcxt, void *user_data)
+{
+    DWORD feature = (DWORD)user_data;
+    if(feature == PF_FASTFAIL_AVAILABLE) {
+        if(options.debug_mode) {
+            dr_fprintf(winafl_data.log, "About to make IsProcessorFeaturePresent(%d) returns 0\n", feature);
+        }
+
+        // Make the software thinks that _fastfail() is not supported.
+        drwrap_set_retval(wrapcxt, (void*)0);
+    }
+}
+
+static void
+unhandledexceptionfilter_interceptor_pre(void *wrapcxt, INOUT void **user_data)
+{
+    PEXCEPTION_POINTERS exception = (PEXCEPTION_POINTERS)drwrap_get_arg(wrapcxt, 0);
+    dr_exception_t dr_exception = { 0 };
+
+    // Fake an exception
+    dr_exception.record = exception->ExceptionRecord;
+    onexception(NULL, &dr_exception);
+}
+
+static void
 event_module_unload(void *drcontext, const module_data_t *info)
 {
     module_table_unload(module_table, info);
@@ -548,11 +591,29 @@ event_module_load(void *drcontext, const module_data_t *info, bool loaded)
             to_wrap = (app_pc)dr_get_proc_address(info->handle, "CreateFileA");
             drwrap_wrap(to_wrap, createfilea_interceptor, NULL);
         }
+
+        if(_stricmp(module_name, "kernelbase.dll") == 0) {
+            // Since Win8, software can use _fastfail() to trigger an exception that cannot be caught.
+            // This is a problem for winafl as it also means DR won't be able to see it. Good thing is that
+            // usually those routines (__report_gsfailure for example) accounts for platforms that don't
+            // have support for fastfail. In those cases, they craft an exception record and pass it
+            // to UnhandledExceptionFilter.
+            //
+            // To work around this we set up two hooks:
+            //   (1) IsProcessorFeaturePresent(PF_FASTFAIL_AVAILABLE): to lie and pretend that the
+            //       platform doesn't support fastfail.
+            //   (2) UnhandledExceptionFilter: to intercept the exception record and forward it
+            //       to winafl's exception handler.
+            to_wrap = (app_pc)dr_get_proc_address(info->handle, "IsProcessorFeaturePresent");
+            drwrap_wrap(to_wrap, isprocessorfeaturepresent_interceptor_pre, isprocessorfeaturepresent_interceptor_post);
+            to_wrap = (app_pc)dr_get_proc_address(info->handle, "UnhandledExceptionFilter");
+            drwrap_wrap(to_wrap, unhandledexceptionfilter_interceptor_pre, NULL);
+        }
     }
 
     if (_stricmp(module_name, "verifier.dll") == 0) {
         to_wrap = (app_pc)dr_get_proc_address(info->handle, "VerifierStopMessage");
-        drwrap_wrap(to_wrap,  verfierstopmessage_interceptor_pre, NULL);
+        drwrap_wrap(to_wrap, verfierstopmessage_interceptor_pre, NULL);
     }
 
     module_table_load(module_table, info);
