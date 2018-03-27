@@ -55,6 +55,8 @@ add_executable(afl-tmin
 
 project(WinAFL)
 
+set(DynamoRIO_LOG_COMPATIBILITY on)
+
 find_package(DynamoRIO)
 if (NOT DynamoRIO_FOUND)
   message(FATAL_ERROR "DynamoRIO package required to build")
