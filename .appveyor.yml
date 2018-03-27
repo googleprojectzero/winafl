@@ -1,0 +1,54 @@
+version: build{build}
+
+image: Visual Studio 2017
+
+branches:
+    only:
+        - master
+
+build:
+    verbosity: detailed
+
+
+environment:
+    matrix:
+      - arch: x86
+        build_dir: build32
+        artifact_name: Release32.zip
+        cmake_build: Visual Studio 15 2017
+
+      - arch: amd64
+        build_dir: build64
+        artifact_name: Release64.zip
+        cmake_build: Visual Studio 15 2017 Win64
+
+platform:
+    - x64
+
+install:
+    - mkdir c:\projects\install
+    - cd c:\projects\install
+    - appveyor DownloadFile https://github.com/DynamoRIO/dynamorio/releases/download/release_7_0_0_rc1/DynamoRIO-Windows-7.0.0-RC1.zip
+    - 7z x DynamoRIO-Windows-7.0.0-RC1.zip -oc:\projects\install\DynamoRIO
+    - dir c:\projects\install\DynamoRIO\
+
+before_build:
+    - if "%arch%"=="x86" call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvars32.bat"
+    - if "%arch%"=="x64" call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvars64.bat"
+
+build_script:
+    - cd c:\projects\winafl
+    - mkdir %build_dir%
+    - cd %build_dir%
+    - cmake -G "%cmake_build%" -DDynamoRIO_DIR=c:\projects\install\DynamoRIO\DynamoRIO-Windows-7.0.0-RC1\cmake -DUSE_COLOR=1 ..
+    - cmake --build . --config Release
+
+after_build:
+    - cd c:\projects\winafl\%build_dir%
+    - copy ..\*.py .\Release\
+    - 7z a %artifact_name% .\Release\*
+
+artifacts:
+    - path: '*\*.zip'
+      name: '%artifact_name%'
+      type: zip
