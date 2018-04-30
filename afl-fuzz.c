@@ -6642,6 +6642,7 @@ static void sync_fuzzers(char** argv) {
 
 	h2 = FindFirstFile(qd_path_pattern, &qd);
 	if(h2 == INVALID_HANDLE_VALUE) {
+      ck_free(qd_path_pattern);
       ck_free(qd_path);
       continue;
 	}
