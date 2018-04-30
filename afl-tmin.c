@@ -25,13 +25,14 @@
 #define AFL_MAIN
 #define VERSION             "2.51b"
 
+#include <windows.h>
+
 #include "config.h"
 #include "types.h"
 #include "debug.h"
 #include "alloc-inl.h"
 #include "hash.h"
 
-#include <windows.h>
 #include <io.h>
 #include <direct.h>
 #include <stdio.h>
@@ -1260,6 +1261,10 @@ int main(int argc, char** argv) {
   optind = 1;
   dynamorio_dir = NULL;
   client_params = NULL;
+
+#ifdef USE_COLOR
+  enable_ansi_console();
+#endif
 
   SAYF(cCYA "afl-tmin for Windows " cBRI VERSION cRST " by <0vercl0k@tuxfamily.org>\n");
   SAYF("Based on WinAFL " cBRI VERSION cRST " by <ifratric@google.com>\n");

@@ -6827,7 +6827,9 @@ static void fix_up_banner(u8* name) {
 /* Check if we're on TTY. */
 
 static void check_if_tty(void) {
+#ifndef USE_COLOR
   not_on_tty = 1;
+#endif
 }
 
 
@@ -7464,23 +7466,6 @@ int getopt(int argc, char **argv, char *optstring) {
 
     return (int)(c[0]);
   }
-}
-
-void enable_ansi_console(void) {
-  // Set output mode to handle virtual terminal sequences
-  DWORD mode = 0;
-  HANDLE console_handle = GetStdHandle(STD_OUTPUT_HANDLE);
-  if (console_handle == INVALID_HANDLE_VALUE) {
-    return;
-  }
-
-  if (!GetConsoleMode(console_handle, &mode)) {
-    return;
-  }
-
-  mode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
-  // Ignore errors
-  SetConsoleMode(console_handle, mode);
 }
 
 /* Main entry point */

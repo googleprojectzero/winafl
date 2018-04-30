@@ -231,4 +231,23 @@
     if (_res != _len) RPFATAL(_res, "Short read from %s", fn); \
   } while (0)
 
+
+static void enable_ansi_console(void) {
+  // Set output mode to handle virtual terminal sequences
+  DWORD mode = 0;
+  HANDLE console_handle = GetStdHandle(STD_OUTPUT_HANDLE);
+  if (console_handle == INVALID_HANDLE_VALUE) {
+    return;
+  }
+
+  if (!GetConsoleMode(console_handle, &mode)) {
+    return;
+  }
+
+  mode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+  // Ignore errors
+  SetConsoleMode(console_handle, mode);
+}
+
+
 #endif /* ! _HAVE_DEBUG_H */
