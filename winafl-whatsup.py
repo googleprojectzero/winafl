@@ -39,7 +39,7 @@ def is_process_running(pid):
     OpenProcess = ctypes.windll.kernel32.OpenProcess
     CloseHandle = ctypes.windll.kernel32.CloseHandle
 
-    SYNCHRONIZE = 0x00100000L
+    SYNCHRONIZE = 0x00100000
     process = OpenProcess(SYNCHRONIZE, False, ctypes.c_uint32(pid))
     if not process:
         return False
@@ -51,13 +51,12 @@ def is_process_running(pid):
 def parse_fuzzer_stats(path):
     data = ''
     with open(path, 'rb') as f:
-        data = f.read()
+        data = f.read().decode('utf-8')
 
     stats = dict(FUZZER_STATS_RX.findall(data))
 
     # parse to int / float
     for key, value in stats.items():
-        value = unicode(value)
         if not value.isdecimal():
             continue
 
@@ -106,8 +105,8 @@ def main():
 
         start_time = stats['start_time']
         run_time = get_cur_time() - start_time
-        run_days = ((run_time / 60) / 60) / 24
-        run_hours = (run_time / 60 / 60) % 24
+        run_days = int(((run_time / 60) / 60) / 24)
+        run_hours = int((run_time / 60 / 60) % 24)
 
         if verbose:
             print(">>> {} ({} days, {} hours) <<<\n".
@@ -147,8 +146,8 @@ def main():
 
             print("")
          
-    total_days = total_time / 60 / 60 / 24
-    total_hours = (total_time / 60 / 60) % 24
+    total_days = int(total_time / 60 / 60 / 24)
+    total_hours = int((total_time / 60 / 60) % 24)
 
     print("Summary stats")
     print("=============")
@@ -160,10 +159,10 @@ def main():
         print("      Dead or remote : {} (excluded from stats)".format(dead_count))
 
     print("      Total run time : {} days, {} hours".format(total_days, total_hours))
-    print("         Total execs : {} million".format(total_execs / 1000 / 1000))
+    print("         Total execs : {} million".format(int(total_execs / 1000 / 1000)))
     print("    Cumulative speed : {:.2f} execs/sec".format(total_eps))
     print("       Pending paths : {} faves, {} total".format(total_pfav, total_pending))
-    if alive_count > 1:
+    if alive_count > 0:
         print("  Pending per fuzzer : {:.2f} faves, {:.2f} total (on average)".
               format(total_pfav / float(alive_count),
                      total_pending / float(alive_count)))

@@ -949,6 +949,10 @@ int main(int argc, char** argv) {
   dynamorio_dir = NULL;
   client_params = NULL;
 
+#ifdef USE_COLOR
+  enable_ansi_console();
+#endif
+
   while ((opt = getopt(argc, argv, "+o:m:t:A:D:eqZQbY")) > 0)
 
     switch (opt) {
