@@ -480,6 +480,7 @@ static void create_target_process(char** argv) {
     }
 
     SetEnvironmentVariable("AFL_STATIC_CONFIG", static_config);
+    SetEnvironmentVariable("AFL_CLIENT_PARAMS", client_params);
     cmd = alloc_printf("%s", target_cmd);
     ck_free(static_config);
   } else {
