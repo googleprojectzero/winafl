@@ -104,7 +104,7 @@ def main():
     date = time.strftime('%a %b %d %H:%M:%S DST %Y', time.localtime())
 
     try:
-        os.makedirs(args.out_dir):
+        os.makedirs(args.out_dir)
     except OSError:
         pass
 
