@@ -315,9 +315,6 @@ enum {
 
 
 
-
-
-
 /* Get unix time in milliseconds */
 
 static u64 get_cur_time(void) {
@@ -2916,7 +2913,7 @@ static void perform_dry_run(char** argv) {
 
       case FAULT_NOINST:
 
-        //FATAL("No instrumentation detected");
+        FATAL("No instrumentation detected");
 
       case FAULT_NOBITS: 
 
