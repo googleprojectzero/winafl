@@ -75,7 +75,6 @@ static u8 *in_dir,                    /* Input directory with test cases  */
           *target_path,               /* Path to target binary            */
           *target_cmd,                /* command line of target           */
           *orig_cmdline;              /* Original command line            */
-static u32 app_persistent_mode;
 static u32 exec_tmout = EXEC_TIMEOUT; /* Configurable exec timeout (ms)   */
 static u32 hang_tmout = EXEC_TIMEOUT; /* Timeout used for hang det (ms)   */
 
@@ -2482,41 +2481,24 @@ static u8 run_target(char** argv, u32 timeout) {
     fuzz_iterations_current = 0;
   }
 
-  DWORD max_readfile_retries = 2; // if we read file more than this amount it means we won't reach target func, thus go to next testcase.
   child_timed_out = 0;
   memset(trace_bits, 0, MAP_SIZE);
   MemoryBarrier();
   watchdog_timeout_time = get_cur_time() + timeout;
   watchdog_enabled = 1;
-  //ACTF("app_persistent_mode '%d'", app_persistent_mode);
-  if (app_persistent_mode)
+  result = ReadCommandFromPipe();
+  if (result == 'K')
   {
+	  //a workaround for first cycle in app persistent mode
 	  result = ReadCommandFromPipe();
-	  //until 'prefuzz' keep telling target to proceed with readfiles.
-	  while (result != 'P') 
-	  {
-		  if (result == 0) //saves us from getting stuck.
-		  {
-			  return FAULT_NONE;
-		  }
-		  if (result == 'F') //means last run reached the fuzzed target, just read next signal
-		  {
-			  WriteCommandToPipe('F'); //means target is going to read file.
-		  }
-		  if (result == 'K')
-		  {
-			  if (max_readfile_retries == 0)
-			  {
-				  //ACTF("target function missed - going for next test case.");
-				  return FAULT_NONE;
-			  }
-			  max_readfile_retries--;
-		  }
-		  result = ReadCommandFromPipe();
-	  } 
-	  //we only leave this scope if the target is waiting to execute the target fuzz function.
   }
-
+  if (result == 0) 
+  {
+	  //saves us from getting stuck in corner case.
+	  MemoryBarrier();
+	  watchdog_enabled = 0;
+	  return FAULT_NONE;
+  }
   WriteCommandToPipe('F');
 
   result = ReadCommandFromPipe(); //no need to check for "error(0)" since we are exiting anyway
@@ -7539,18 +7521,14 @@ int main(int argc, char** argv) {
 
   optind = 1;
 
-  app_persistent_mode = 0;
   in_dir = NULL;
   out_dir = NULL;
   dynamorio_dir = NULL;
   client_params = NULL;
 
-  while ((opt = getopt(argc, argv, "+i:o:p:f:m:t:T:dYnCB:S:M:x:QD:b:")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dYnCB:S:M:x:QD:b:")) > 0)
 
     switch (opt) {
-	  case 'p':
-		app_persistent_mode = 1;
-		break;
       case 'i':
 
         if (in_dir) FATAL("Multiple -i options not supported");

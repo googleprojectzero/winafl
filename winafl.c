@@ -93,7 +93,6 @@ typedef struct _winafl_option_t {
     int num_fuz_args;
     drwrap_callconv_t callconv;
     bool thread_coverage;
-	char fuzz_input_file[MAXIMUM_PATH];
 } winafl_option_t;
 static winafl_option_t options;
 
@@ -433,31 +432,47 @@ instrument_edge_coverage(void *drcontext, void *tag, instrlist_t *bb, instr_t *i
 }
 
 static void
-pre_reading_file_handler(void *wrapcxt, INOUT void **user_data)
+pre_loop_start_handler(void *wrapcxt, INOUT void **user_data)
 {
+	void *drcontext = drwrap_get_drcontext(wrapcxt);
+
 	if (!options.debug_mode) {
-		//this two steps let the server know 2 things: 
-		//	1:we start a new cycle
-		//	2:server can write testcase to file before we read.
-		WriteCommandToPipe('K'); //let server know we are 'ok', as we might miss the fuzz target func.
-		WriteCommandToPipe('F'); //let server know we gonna read file now.
+		//let server know we finished a cycle, redundunt on first cycle.
+		WriteCommandToPipe('K');
 
-		char command = ReadCommandFromPipe(); //wait for server acknowledgement for file reading
+		if (fuzz_target.iteration == options.fuzz_iterations) {
+			dr_exit_process(0);
+		}
+		fuzz_target.iteration++;
 
-		if (command != 'F') { //make sure it's 'R' - for read.
+		//let server know we are starting a new cycle
+		WriteCommandToPipe('P'); 
+
+		//wait for server acknowledgement for cycle start
+		char command = ReadCommandFromPipe(); 
+
+		if (command != 'F') {
 			if (command == 'Q') {
 				dr_exit_process(0);
 			}
 			else {
 				char errorMessage[] = "unrecognized command received over pipe: ";
-				errorMessage[40] = command;
-				DR_ASSERT_MSG(false, errorMessage/* "unrecognized command received over pipe"*/);
+				errorMessage[sizeof(errorMessage)-2] = command;
+				DR_ASSERT_MSG(false, errorMessage);
 			}
 		}
 	}
 	else {
 		debug_data.pre_hanlder_called++;
-		dr_fprintf(winafl_data.log, "In pre_reading_file_handler\n");
+		dr_fprintf(winafl_data.log, "In pre_loop_start_handler\n");
+	}
+
+	memset(winafl_data.afl_area, 0, MAP_SIZE);
+
+	if (options.coverage_kind == COVERAGE_EDGE || options.thread_coverage) {
+		void **thread_data = (void **)drmgr_get_tls_field(drcontext, winafl_tls_field);
+		thread_data[0] = 0;
+		thread_data[1] = winafl_data.afl_area;
 	}
 }
 
@@ -479,7 +494,7 @@ pre_fuzz_handler(void *wrapcxt, INOUT void **user_data)
 		WriteCommandToPipe('P');
 		command = ReadCommandFromPipe();
 
-        if(command != 'F' && options.fuzz_mode != in_app_persistent_mode) {
+        if(command != 'F') {
             if(command == 'Q') {
                 dr_exit_process(0);
             } else {
@@ -492,17 +507,14 @@ pre_fuzz_handler(void *wrapcxt, INOUT void **user_data)
     }
 
     //save or restore arguments
-	if (options.fuzz_mode != in_app_persistent_mode)
-	{
-		if (fuzz_target.iteration == 0) {
-			for (i = 0; i < options.num_fuz_args; i++) {
-				options.func_args[i] = drwrap_get_arg(wrapcxt, i);
-			}
+	if (fuzz_target.iteration == 0) {
+		for (i = 0; i < options.num_fuz_args; i++) {
+			options.func_args[i] = drwrap_get_arg(wrapcxt, i);
 		}
-		else {
-			for (i = 0; i < options.num_fuz_args; i++) {
-				drwrap_set_arg(wrapcxt, i, options.func_args[i]);
-			}
+	}
+	else {
+		for (i = 0; i < options.num_fuz_args; i++) {
+			drwrap_set_arg(wrapcxt, i, options.func_args[i]);
 		}
 	}
 
@@ -518,8 +530,8 @@ pre_fuzz_handler(void *wrapcxt, INOUT void **user_data)
 static void
 post_fuzz_handler(void *wrapcxt, void *user_data)
 {
-    //dr_mcontext_t *mc;
-    //mc = drwrap_get_mcontext(wrapcxt);
+    dr_mcontext_t *mc;
+    mc = drwrap_get_mcontext(wrapcxt);
 
     if(!options.debug_mode) {
 		WriteCommandToPipe('K');
@@ -533,38 +545,15 @@ post_fuzz_handler(void *wrapcxt, void *user_data)
         dr_exit_process(0);
     }
 
-   // mc->xsp = fuzz_target.xsp;
-   // mc->pc = fuzz_target.func_pc;
-
-	if (options.fuzz_mode != in_app_persistent_mode)
-	{
-		drwrap_redirect_execution(wrapcxt);
-	}
-}
-
-static int strcmp_ansi_wide(char* ansi, wchar_t* wide)
-{
-	char wide_to_asni_result[MAXIMUM_PATH];
-	int res_size = wcstombs(wide_to_asni_result, wide, sizeof(wide_to_asni_result));
-	if (res_size == MAXIMUM_PATH)
-	{
-		wide_to_asni_result[MAXIMUM_PATH - 1] = '\0';
-	}
-	return strcmp(ansi, wide_to_asni_result);
+    mc->xsp = fuzz_target.xsp;
+    mc->pc = fuzz_target.func_pc;
+	drwrap_redirect_execution(wrapcxt);
 }
 
 static void
 createfilew_interceptor(void *wrapcxt, INOUT void **user_data)
 {
     wchar_t *filenamew = (wchar_t *)drwrap_get_arg(wrapcxt, 0);
-
-	if (options.fuzz_mode == in_app_persistent_mode)
-	{
-		if (strcmp_ansi_wide(options.fuzz_input_file, filenamew) == 0) {
-			pre_reading_file_handler(wrapcxt, user_data);
-		}
-	}
-
     if(options.debug_mode)
         dr_fprintf(winafl_data.log, "In OpenFileW, reading %ls\n", filenamew);
 }
@@ -573,13 +562,6 @@ static void
 createfilea_interceptor(void *wrapcxt, INOUT void **user_data)
 {
     char *filename = (char *)drwrap_get_arg(wrapcxt, 0);
-
-	if (options.fuzz_mode == in_app_persistent_mode)
-	{
-		if (strcmp(filename, options.fuzz_input_file) == 0) {
-			pre_reading_file_handler(wrapcxt, user_data);
-		}
-	}
     if(options.debug_mode)
         dr_fprintf(winafl_data.log, "In OpenFileA, reading %s\n", filename);
 }
@@ -663,17 +645,17 @@ event_module_load(void *drcontext, const module_data_t *info, bool loaded)
                     to_wrap += (size_t)info->start;
                 }
             }
-			//if (options.fuzz_mode == in_app_persistent_mode)
-			//{
-			//	drwrap_wrap_ex(to_wrap, NULL, post_fuzz_handler, NULL, options.callconv);
-			//}
-			//else
-			//{
+			if (options.fuzz_mode == default_mode)
+			{
 				drwrap_wrap_ex(to_wrap, pre_fuzz_handler, post_fuzz_handler, NULL, options.callconv);
-			//}
+			}
+			if (options.fuzz_mode == in_app_persistent_mode)
+			{
+				drwrap_wrap_ex(to_wrap, pre_loop_start_handler, NULL, NULL, options.callconv);
+			}
         }
 
-        if(options.fuzz_mode == in_app_persistent_mode || (options.debug_mode && (strcmp(module_name, "KERNEL32.dll") == 0))) {
+        if(options.debug_mode && (strcmp(module_name, "KERNEL32.dll") == 0)) {
             to_wrap = (app_pc)dr_get_proc_address(info->handle, "CreateFileW");
             drwrap_wrap(to_wrap, createfilew_interceptor, NULL);
             to_wrap = (app_pc)dr_get_proc_address(info->handle, "CreateFileA");
@@ -802,6 +784,7 @@ options_init(client_id_t id, int argc, const char *argv[])
     const char *token;
     target_module_t *target_modules;
     /* default values */
+	options.fuzz_mode = default_mode;
     options.nudge_kills = true;
     options.debug_mode = false;
     options.thread_coverage = false;
@@ -896,10 +879,6 @@ options_init(client_id_t id, int argc, const char *argv[])
             else
                 NOTIFY(0, "Unknown calling convention, using default value instead.\n");
         }
-		else if (strcmp(token, "-f") == 0) {
-			USAGE_CHECK((i + 1) < argc, "missing target file: '-f' arg");
-			strncpy(options.fuzz_input_file, argv[++i], BUFFER_SIZE_ELEMENTS(options.fuzz_input_file));
-		}
 		else if (strcmp(token, "-fuzz_mode") == 0) {
 			USAGE_CHECK((i + 1) < argc, "missing mode arg: '-fuzz_mode' arg");
 			const char* mode = argv[++i];
@@ -912,7 +891,6 @@ options_init(client_id_t id, int argc, const char *argv[])
 				options.fuzz_mode = default_mode;
 			}
 		}
-		//options.fuzz_mode == in_app_persistent_mode
         else {
             NOTIFY(0, "UNRECOGNIZED OPTION: \"%s\"\n", token);
             USAGE_CHECK(false, "invalid option");
