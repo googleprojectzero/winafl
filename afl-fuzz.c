@@ -2538,6 +2538,10 @@ static u8 run_target(char** argv, u32 timeout) {
 	  watchdog_enabled = 0;
 	  return FAULT_NONE;
   }
+  if (result != 'P')
+  {
+	  FATAL("Unexpected result from pipe! expected 'P', instead received '%c'\n", result);
+  }
   WriteCommandToPipe('F');
 
   result = ReadCommandFromPipe(timeout); //no need to check for "error(0)" since we are exiting anyway

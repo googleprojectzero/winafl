@@ -66,7 +66,7 @@ static uint verbose;
 #define COVERAGE_EDGE 1
 
 //fuzz modes
-enum fuzz_mode_t { default_mode = 0,	in_app_persistent_mode = 1,};
+enum persistence_mode_t { native_mode = 0,	in_app = 1,};
 
 typedef struct _target_module_t {
     char module_name[MAXIMUM_PATH];
@@ -79,7 +79,7 @@ typedef struct _winafl_option_t {
      */
     bool nudge_kills;
     bool debug_mode;
-	int fuzz_mode;
+	int persistence_mode;
     int coverage_kind;
     char logdir[MAXIMUM_PATH];
     target_module_t *target_modules;
@@ -645,11 +645,11 @@ event_module_load(void *drcontext, const module_data_t *info, bool loaded)
                     to_wrap += (size_t)info->start;
                 }
             }
-			if (options.fuzz_mode == default_mode)
+			if (options.persistence_mode == native_mode)
 			{
 				drwrap_wrap_ex(to_wrap, pre_fuzz_handler, post_fuzz_handler, NULL, options.callconv);
 			}
-			if (options.fuzz_mode == in_app_persistent_mode)
+			if (options.persistence_mode == in_app)
 			{
 				drwrap_wrap_ex(to_wrap, pre_loop_start_handler, NULL, NULL, options.callconv);
 			}
@@ -784,7 +784,7 @@ options_init(client_id_t id, int argc, const char *argv[])
     const char *token;
     target_module_t *target_modules;
     /* default values */
-	options.fuzz_mode = default_mode;
+	options.persistence_mode = native_mode;
     options.nudge_kills = true;
     options.debug_mode = false;
     options.thread_coverage = false;
@@ -879,16 +879,16 @@ options_init(client_id_t id, int argc, const char *argv[])
             else
                 NOTIFY(0, "Unknown calling convention, using default value instead.\n");
         }
-		else if (strcmp(token, "-fuzz_mode") == 0) {
+		else if (strcmp(token, "-persistence_mode") == 0) {
 			USAGE_CHECK((i + 1) < argc, "missing mode arg: '-fuzz_mode' arg");
 			const char* mode = argv[++i];
-			if (strcmp(mode, "in_app_persistent") == 0)
+			if (strcmp(mode, "in_app") == 0)
 			{
-				options.fuzz_mode = in_app_persistent_mode;
+				options.persistence_mode = in_app;
 			}
 			else
 			{
-				options.fuzz_mode = default_mode;
+				options.persistence_mode = native_mode;
 			}
 		}
         else {
