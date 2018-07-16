@@ -280,6 +280,31 @@ The target function should do these things during its lifetime:
 4. Return normally (So that WinAFL can "catch" this return and redirect
    execution. "returning" via ExitProcess() and such won't work)
 
+## In App Persistence mode
+
+This feature is a tweak for the traditional "target function" approach and aims
+to loosen the requirements of the target function to do both reading
+an input file and processing the input file.
+
+In some applications it's quite challenging to find a target function
+that with a simple execution redirection won't break global states and will do
+both reading and processing of inputs.
+
+This mode assumes that the target application will actually loop
+the target function by itself, and will handle properly its global state
+For example a udp server handling packets or a js interpreter running inside
+a while loop.
+
+This mode works as following:
+1. Your target runs until hitting the target function.
+2. The afl server starts instrumenting the target.
+3. Your target runs until hitting the target function again.
+4. The afl server stops instrumenting current cycle and starts a new one.
+
+usage: add the following option to the winafl arguments:
+-persistence_mode in_app
+
+
 ## Corpus minimization
 
 WinAFL includes the windows port of afl-cmin in winafl-cmin.py. Please run the
