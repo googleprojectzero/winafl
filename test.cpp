@@ -30,7 +30,6 @@
 
 int __declspec(noinline) test_target(char* input_file_path, char* argv_0)
 {
-	return 1;
 	char *crash = NULL;
 	FILE *fp = fopen(input_file_path, "rb");
 	char c;
