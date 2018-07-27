@@ -57,6 +57,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+#pragma comment(lib,"ws2_32.lib") //Winsock Library
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined (__OpenBSD__)
 #  include <sys/sysctl.h>
 #endif /* __APPLE__ || __FreeBSD__ || __OpenBSD__ */
@@ -74,10 +75,16 @@ static u8 *in_dir,                    /* Input directory with test cases  */
           *doc_path,                  /* Path to documentation dir        */
           *target_path,               /* Path to target binary            */
           *target_cmd,                /* command line of target           */
-          *orig_cmdline;              /* Original command line            */
+          *orig_cmdline,              /* Original command line            */
+          *target_ip_address = NULL;  /* Target IP to send test cases     */
 
 static u32 exec_tmout = EXEC_TIMEOUT; /* Configurable exec timeout (ms)   */
 static u32 hang_tmout = EXEC_TIMEOUT; /* Timeout used for hang det (ms)   */
+
+static u8  enable_socket_fuzzing = 0; /* Enable network fuzzing           */
+static u8  is_TCP = 1;                /* TCP or UDP                       */
+static u32 target_port = 0x0;         /* Target port to send test cases   */
+static u32 socket_init_delay = SOCKET_INIT_DELAY; /* Socket init delay    */
 
 static u64 mem_limit  = MEM_LIMIT;    /* Memory cap for child (MB)        */
 
@@ -2229,9 +2236,9 @@ static void create_target_process(char** argv) {
   } else {
     pidfile = alloc_printf("childpid_%s.txt", fuzzer_id);
     cmd = alloc_printf(
-      "%s\\drrun.exe -pidfile %s -no_follow_children -c winafl.dll %s -fuzzer_id %s -- %s",
-      dynamorio_dir, pidfile, client_params, fuzzer_id, target_cmd
-    );
+        "%s\\drrun.exe -pidfile %s -no_follow_children -c winafl.dll %s %s -fuzzer_id %s -- %s",
+        dynamorio_dir, pidfile, client_params, (enable_socket_fuzzing == 1) ? "-socket_fuzzing": "",
+        fuzzer_id, target_cmd);
   }
 
   if(mem_limit || cpu_aff) {
@@ -2422,6 +2429,99 @@ static int is_child_running() {
   return ret;
 }
 
+static void send_data_tcp(const char *buf, const int buf_len, int first_time) {
+  static struct sockaddr_in si_other;
+  static int slen = sizeof(si_other);
+  static WSADATA wsa;
+  int s;
+
+  if (first_time == 0x0) {
+    /* wait while the target process open the socket */
+    Sleep(socket_init_delay);
+
+    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
+       FATAL("WSAStartup failed. Error Code : %d", WSAGetLastError());
+
+       // setup address structure
+       memset((char *)&si_other, 0, sizeof(si_other));
+       si_other.sin_family = AF_INET;
+       si_other.sin_port = htons(target_port);
+       si_other.sin_addr.S_un.S_addr = inet_addr((char *)target_ip_address);
+    }
+
+    /* In case of TCP we need to open a socket each time we want to establish
+     * connection. In theory we can keep connections always open but it might
+     * cause our target behave differently (probably there are a bunch of
+     * applications where we should apply such scheme to trigger interesting
+     * behavior).
+     */
+    if ((s = socket(AF_INET, SOCK_STREAM, IPPROTO_IP)) == SOCKET_ERROR)
+      FATAL("socket() failed with error code : %d", WSAGetLastError());
+
+    // Connect to server.
+    if (connect(s, (SOCKADDR *)& si_other, slen) == SOCKET_ERROR)
+      FATAL("connect() failed with error code : %d", WSAGetLastError());
+
+    // Send our buffer
+    if (send(s, buf, buf_len, 0) == SOCKET_ERROR)
+      FATAL("send() failed with error code : %d", WSAGetLastError());
+
+    // shutdown the connection since no more data will be sent
+    if (shutdown(s, 0x1/*SD_SEND*/) == SOCKET_ERROR)
+      FATAL("shutdown failed with error: %d\n", WSAGetLastError());
+}
+
+static void send_data_udp(const char *buf, const int buf_len, int first_time) {
+  static struct sockaddr_in si_other;
+  static int s, slen = sizeof(si_other);
+  static WSADATA wsa;
+
+  if (first_time == 0x0) {
+    /* wait while the target process open the socket */
+    Sleep(socket_init_delay);
+
+    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
+      FATAL("WSAStartup failed. Error Code : %d", WSAGetLastError());
+
+    if ((s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == SOCKET_ERROR)
+      FATAL("socket() failed with error code : %d", WSAGetLastError());
+
+    // setup address structure
+    memset((char *)&si_other, 0, sizeof(si_other));
+    si_other.sin_family = AF_INET;
+    si_other.sin_port = htons(target_port);
+    si_other.sin_addr.S_un.S_addr = inet_addr((char *)target_ip_address);
+  }
+
+  // send the data
+  if (sendto(s, buf, buf_len, 0, (struct sockaddr *) &si_other, slen) == SOCKET_ERROR)
+    FATAL("sendto() failed with error code : %d", WSAGetLastError());
+}
+
+void open_file_and_send_data() {
+  /* open generated file */
+  s32 fd = out_fd;
+  if (out_file != NULL)
+    fd = open(out_file, O_RDONLY | O_BINARY);
+
+  long fsize;
+  fsize = lseek(fd, 0, SEEK_END);
+  lseek(fd, 0, SEEK_SET);
+
+  /* allocate buffer to read the file */
+  char *buf = malloc(fsize + 1);
+  ck_read(fd, buf, fsize, "input file");
+
+  /* send data over TCP or UDP */
+  if (is_TCP)
+    send_data_tcp(buf, fsize, fuzz_iterations_current);
+  else
+    send_data_udp(buf, fsize, fuzz_iterations_current);
+
+  /* free memory */
+  free(buf);
+}
+
 /* Execute target application, monitoring for timeouts. Return status
    information. The called program will update trace_bits[]. */
 
@@ -2452,6 +2552,9 @@ static u8 run_target(char** argv, u32 timeout) {
     create_target_process(argv);
     fuzz_iterations_current = 0;
   }
+
+  if (enable_socket_fuzzing)
+    open_file_and_send_data();
 
   child_timed_out = 0;
   memset(trace_bits, 0, MAP_SIZE);
@@ -6863,6 +6966,12 @@ static void usage(u8* argv0) {
        "  -d            - quick & dirty mode (skips deterministic steps)\n"
        "  -x dir        - optional fuzzer dictionary (see README)\n\n"
 
+	   "Network fuzzing settings:\n\n"
+       "  -a            - IP address to send data in\n"
+       "  -U            - Use UDP (default TCP)\n"
+       "  -p            - Port to send data in\n"
+       "  -w            - Delay in milliseconds before start sending data\n"
+
        "Other stuff:\n\n"
 
        "  -T text       - text banner to show on the screen\n"
@@ -7493,7 +7602,7 @@ int main(int argc, char** argv) {
   dynamorio_dir = NULL;
   client_params = NULL;
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dYnCB:S:M:x:QD:b:")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dYnCB:S:M:x:QD:b:Ua:p:w:")) > 0)
 
     switch (opt) {
 
@@ -7670,11 +7779,38 @@ int main(int argc, char** argv) {
 
         break;
 
+	  case 'a':
+        enable_socket_fuzzing = 1;
+        target_ip_address = ck_strdup(optarg);
+
+        break;
+
+      case 'U':
+        is_TCP = 0;
+
+        break;
+
+      case 'p':
+        enable_socket_fuzzing = 1;
+        if (sscanf(optarg, "%u", &target_port) < 1 ||
+          optarg[0] == '-') FATAL("Bad syntax used for -p");
+
+        break;
+
+      case 'w':
+        if (sscanf(optarg, "%u", &socket_init_delay) < 1 ||
+          optarg[0] == '-') FATAL("Bad syntax used for -w");
+
+        break;
+
       default:
 
         usage(argv[0]);
 
     }
+
+  if (enable_socket_fuzzing && (target_ip_address == NULL || target_port == 0))
+    FATAL("\nYou forgot to specify either target IP address or port\n");
 
   if (!in_dir || !out_dir || !timeout_given || (!drioless && !dynamorio_dir)) usage(argv[0]);
 

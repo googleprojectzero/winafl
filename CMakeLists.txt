@@ -10,6 +10,11 @@ add_executable(test
   test.cpp
   )
 
+project(test_netmode)
+
+add_executable(test_netmode test_netmode.cpp)
+
+
 if(NOT "${CMAKE_GENERATOR}" MATCHES "(Win64)")
 
   project(test_static)
