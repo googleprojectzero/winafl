@@ -143,6 +143,8 @@ static u8  var_bytes[MAP_SIZE];       /* Bytes that appear to be variable */
 
 static HANDLE shm_handle;             /* Handle of the SHM region         */
 static HANDLE pipe_handle;            /* Handle of the name pipe          */
+static OVERLAPPED pipe_overlapped;    /* Overlapped structure of pipe     */
+
 static char   *fuzzer_id = NULL;      /* The fuzzer ID or a randomized 
                                          seed allowing multiple instances */
 static HANDLE devnul_handle;          /* Handle of the nul device         */
@@ -320,6 +322,7 @@ enum {
   /* 04 */ FAULT_NOINST,
   /* 05 */ FAULT_NOBITS
 };
+
 
 
 /* Get unix time in milliseconds */
@@ -2180,6 +2183,42 @@ char *argv_to_cmd(char** argv) {
   return ret;
 }
 
+/*Initialazing overlapped structure and connecting*/
+static BOOL OverlappedConnectNamedPipe(HANDLE pipe_h, LPOVERLAPPED overlapped)
+{
+	ZeroMemory(overlapped, sizeof(*overlapped));
+	
+	overlapped->hEvent = CreateEvent(
+		NULL,    // default security attribute 
+		TRUE,    // manual-reset event 
+		TRUE,    // initial state = signaled 
+		NULL);   // unnamed event object 
+
+	if (overlapped->hEvent == NULL)
+	{
+		return FALSE;
+	}
+
+	if (ConnectNamedPipe(pipe_h, overlapped))
+	{
+		return FALSE;
+	}
+	switch (GetLastError())
+	{
+		// The overlapped connection in progress. 
+	case ERROR_IO_PENDING:
+		WaitForSingleObject(overlapped->hEvent, INFINITE);
+		return TRUE;
+		// Client is already connected
+	case ERROR_PIPE_CONNECTED:
+		return TRUE;
+	default:
+	{
+		return FALSE;
+	}
+	}
+}
+
 static void create_target_process(char** argv) {
   char *cmd;
   char *pipe_name;
@@ -2198,7 +2237,8 @@ static void create_target_process(char** argv) {
 
   pipe_handle = CreateNamedPipe(
     pipe_name,                // pipe name
-    PIPE_ACCESS_DUPLEX,       // read/write access
+	PIPE_ACCESS_DUPLEX |     // read/write access 
+	FILE_FLAG_OVERLAPPED,    // overlapped mode 
     0,
     1,                        // max. instances
     512,                      // output buffer size
@@ -2286,10 +2326,8 @@ static void create_target_process(char** argv) {
   watchdog_timeout_time = get_cur_time() + exec_tmout;
   watchdog_enabled = 1;
 
-  if(!ConnectNamedPipe(pipe_handle, NULL)) {
-    if(GetLastError() != ERROR_PIPE_CONNECTED) {
+  if(!OverlappedConnectNamedPipe(pipe_handle, &pipe_overlapped)) {
       FATAL("ConnectNamedPipe failed, GLE=%d.\n", GetLastError());
-    }
   }
 
   watchdog_enabled = 0;
@@ -2395,6 +2433,7 @@ leave:
 	if (pipe_handle) {
 		DisconnectNamedPipe(pipe_handle);
 		CloseHandle(pipe_handle);
+		CloseHandle(pipe_overlapped.hEvent);
 
 		pipe_handle = NULL;
 	}
@@ -2411,6 +2450,37 @@ DWORD WINAPI watchdog_timer( LPVOID lpParam ) {
 			destroy_target_process(0);
 		}
 	}
+}
+
+char ReadCommandFromPipe(u32 timeout)
+{
+	DWORD num_read;
+	char result = 0;
+	if (!is_child_running())
+	{
+		return 0;
+	}
+
+	if (ReadFile(pipe_handle, &result, 1, &num_read, &pipe_overlapped) || GetLastError() == ERROR_IO_PENDING)
+	{
+		//ACTF("ReadFile success or GLE IO_PENDING", result);
+		if (WaitForSingleObject(pipe_overlapped.hEvent, timeout) != WAIT_OBJECT_0) {
+			// took longer than specified timeout or other error - cancel read
+			CancelIo(pipe_handle);
+			WaitForSingleObject(pipe_overlapped.hEvent, INFINITE); //wait for cancelation to finish properly.
+			result = 0;
+		}
+	}
+	//ACTF("ReadFile GLE %d", GetLastError());
+	//ACTF("read from pipe '%c'", result);
+	return result;
+}
+
+void WriteCommandToPipe(char cmd)
+{
+	DWORD num_written;
+	//ACTF("write to pipe '%c'", cmd);
+	WriteFile(pipe_handle, &cmd, 1, &num_written, &pipe_overlapped);
 }
 
 static void setup_watchdog_timer() {
@@ -2527,8 +2597,6 @@ void open_file_and_send_data() {
 
 static u8 run_target(char** argv, u32 timeout) {
   //todo watchdog timer to detect hangs
-
-  char command[] = "F";
   DWORD num_read;
   char result = 0;
 
@@ -2559,20 +2627,29 @@ static u8 run_target(char** argv, u32 timeout) {
   child_timed_out = 0;
   memset(trace_bits, 0, MAP_SIZE);
   MemoryBarrier();
-
-  WriteFile( 
-    pipe_handle,        // handle to pipe 
-    command,     // buffer to write from 
-    1, // number of bytes to write 
-    &num_read,   // number of bytes written 
-    NULL);        // not overlapped I/O 
-
-
   watchdog_timeout_time = get_cur_time() + timeout;
   watchdog_enabled = 1;
+  result = ReadCommandFromPipe(timeout);
+  if (result == 'K')
+  {
+	  //a workaround for first cycle in app persistent mode
+	  result = ReadCommandFromPipe(timeout);
+  }
+  if (result == 0) 
+  {
+	  //saves us from getting stuck in corner case.
+	  MemoryBarrier();
+	  watchdog_enabled = 0;
+	  return FAULT_NONE;
+  }
+  if (result != 'P')
+  {
+	  FATAL("Unexpected result from pipe! expected 'P', instead received '%c'\n", result);
+  }
+  WriteCommandToPipe('F');
 
-  ReadFile(pipe_handle, &result, 1, &num_read, NULL);
-
+  result = ReadCommandFromPipe(timeout); //no need to check for "error(0)" since we are exiting anyway
+  //ACTF("result: '%c'", result);
   MemoryBarrier();
   watchdog_enabled = 0;
 
@@ -7605,7 +7682,6 @@ int main(int argc, char** argv) {
   while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dYnCB:S:M:x:QD:b:Ua:p:w:")) > 0)
 
     switch (opt) {
-
       case 'i':
 
         if (in_dir) FATAL("Multiple -i options not supported");
