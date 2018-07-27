@@ -79,6 +79,7 @@ static u8 *in_dir,                    /* Input directory with test cases  */
           *target_ip_address = NULL;  /* Target IP to send test cases     */
 
 static u32 exec_tmout = EXEC_TIMEOUT; /* Configurable exec timeout (ms)   */
+static u32 init_tmout = 0;            /* Configurable init timeout (ms)   */
 static u32 hang_tmout = EXEC_TIMEOUT; /* Timeout used for hang det (ms)   */
 
 static u8  enable_socket_fuzzing = 0; /* Enable network fuzzing           */
@@ -2627,7 +2628,12 @@ static u8 run_target(char** argv, u32 timeout) {
   child_timed_out = 0;
   memset(trace_bits, 0, MAP_SIZE);
   MemoryBarrier();
-  watchdog_timeout_time = get_cur_time() + timeout;
+  if (fuzz_iterations_current == 0 && init_tmout != 0) {
+	  watchdog_timeout_time = get_cur_time() + init_tmout;
+  }
+  else {
+	  watchdog_timeout_time = get_cur_time() + timeout;
+  }
   watchdog_enabled = 1;
   result = ReadCommandFromPipe(timeout);
   if (result == 'K')
@@ -7051,6 +7057,7 @@ static void usage(u8* argv0) {
 
        "Other stuff:\n\n"
 
+       "  -I msec       - timeout for process initialization and first run\n"
        "  -T text       - text banner to show on the screen\n"
        "  -M \\ -S id    - distributed mode (see parallel_fuzzing.txt)\n"
 
@@ -7679,7 +7686,7 @@ int main(int argc, char** argv) {
   dynamorio_dir = NULL;
   client_params = NULL;
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dYnCB:S:M:x:QD:b:Ua:p:w:")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:t:I:T:dYnCB:S:M:x:QD:b:Ua:p:w:")) > 0)
 
     switch (opt) {
       case 'i':
@@ -7760,6 +7767,16 @@ int main(int argc, char** argv) {
           break;
 
       }
+
+	  case 'I': {
+
+		  if (sscanf(optarg, "%u", &init_tmout) < 1) FATAL("Bad syntax used for -I");
+
+		  if (init_tmout < 5) FATAL("Dangerously low value of -I");
+
+		  break;
+
+	  }
 
       case 'm': {
 
