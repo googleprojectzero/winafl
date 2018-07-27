@@ -57,6 +57,7 @@ WinAFL has been successfully used to identify bugs in Windows software, such as
  * [Microsoft] CVE-2016-7212 - found by Aral Yaman of Noser Engineering AG
  * [Microsoft] CVE-2017-0073, CVE-2017-0190, CVE-2017-11816 - found by [Symeon Paraschoudis](https://twitter.com/symeonp) of SensePost
  * [Adobe] CVE-2018-4985, CVE-2018-5063, CVE-2018-5064, CVE-2018-5065, CVE-2018-5068, CVE-2018-5069, CVE-2018-5070, CVE-2018-12754, CVE-2018-12755, CVE-2018-12764, CVE-2018-12765, CVE-2018-12766, CVE-2018-12767, CVE-2018-12768 - found by Yoav Alon and Netanel Ben-Simon from Check Point Software Technologies
+ * [Kollective Kontiki 10.0.1] CVE-2018-11672 - found by Maksim Shudrak from Salesforce
  
 (Let me know if you know of any others and I'll include them in the list)
 
@@ -336,6 +337,23 @@ Examples of use:
 <p align="center">
 <img alt="winafl-cmin.py" src="screenshots/winafl-cmin.py.png"/>
 </p>
+
+## Network fuzzing mode
+
+Recently, WinAFL started supporting of network-based applications fuzzing that receive and parse network data. There are several winAFL options to control this process:
+
+```
+  -a IP address - IP address to send data in
+  -U            - use UDP protocol instead of TCP to send data (default TCP)
+  -p port       - port to send data in
+  -w msec       - delay in milliseconds before actually start fuzzing
+```
+
+Basically, you need to add IP address and port to existent winAFL command line arguments to send your test cases over network. You still need to find target function and make sure that this function receives data from network, parses it, and returns normally. It is very important to emphasize that in case of network-based fuzzing, the option ```-fuzz_iterations``` is considered as a number of test cases winAFL should send over network before it completely restarts
+target application.
+
+Additionally, this mode is considered as experimental since we have experienced some problems with stability and performance. However, we
+found this option very usefull and managed to find several vulnerabilities in network-based applications (e.g. in Kollective Kontiki listed above).
 
 ## Statically instrument a binary via [syzygy](https://github.com/google/syzygy)
 

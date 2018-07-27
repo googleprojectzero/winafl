@@ -93,6 +93,7 @@ typedef struct _winafl_option_t {
     int num_fuz_args;
     drwrap_callconv_t callconv;
     bool thread_coverage;
+    bool enable_socket_fuzzing;
 } winafl_option_t;
 static winafl_option_t options;
 
@@ -507,16 +508,15 @@ pre_fuzz_handler(void *wrapcxt, INOUT void **user_data)
     }
 
     //save or restore arguments
-	if (fuzz_target.iteration == 0) {
-		for (i = 0; i < options.num_fuz_args; i++) {
-			options.func_args[i] = drwrap_get_arg(wrapcxt, i);
-		}
-	}
-	else {
-		for (i = 0; i < options.num_fuz_args; i++) {
-			drwrap_set_arg(wrapcxt, i, options.func_args[i]);
-		}
-	}
+    if (!options.enable_socket_fuzzing) {
+        if (fuzz_target.iteration == 0) {
+            for (i = 0; i < options.num_fuz_args; i++)
+                options.func_args[i] = drwrap_get_arg(wrapcxt, i);
+        } else {
+            for (i = 0; i < options.num_fuz_args; i++)
+                drwrap_set_arg(wrapcxt, i, options.func_args[i]);
+        }
+    }
 
     memset(winafl_data.afl_area, 0, MAP_SIZE);
 
@@ -539,6 +539,10 @@ post_fuzz_handler(void *wrapcxt, void *user_data)
         debug_data.post_handler_called++;
         dr_fprintf(winafl_data.log, "In post_fuzz_handler\n");
     }
+
+    /* We don't need to reload context in case of network-based fuzzing. */
+    if (options.enable_socket_fuzzing)
+        return;
 
     fuzz_target.iteration++;
     if(fuzz_target.iteration == options.fuzz_iterations) {
@@ -575,6 +579,20 @@ verfierstopmessage_interceptor_pre(void *wrapctx, INOUT void **user_data)
     exception_record.ExceptionCode = STATUS_HEAP_CORRUPTION;
 
     onexception(NULL, &dr_exception);
+}
+
+static void
+recvfrom_interceptor(void *wrapcxt, INOUT void **user_data)
+{
+    if (options.debug_mode)
+        dr_fprintf(winafl_data.log, "In recvfrom\n");
+}
+
+static void
+recv_interceptor(void *wrapcxt, INOUT void **user_data)
+{
+    if (options.debug_mode)
+        dr_fprintf(winafl_data.log, "In recv\n");
 }
 
 static void
@@ -653,6 +671,13 @@ event_module_load(void *drcontext, const module_data_t *info, bool loaded)
 			{
 				drwrap_wrap_ex(to_wrap, pre_loop_start_handler, NULL, NULL, options.callconv);
 			}
+        }
+
+        if (options.debug_mode && (strcmp(module_name, "WS2_32.dll") == 0)) {
+            to_wrap = (app_pc)dr_get_proc_address(info->handle, "recvfrom");
+            bool result = drwrap_wrap(to_wrap, recvfrom_interceptor, NULL);
+            to_wrap = (app_pc)dr_get_proc_address(info->handle, "recv");
+            result = drwrap_wrap(to_wrap, recv_interceptor, NULL);
         }
 
         if(options.debug_mode && (strcmp(module_name, "KERNEL32.dll") == 0)) {
@@ -794,6 +819,7 @@ options_init(client_id_t id, int argc, const char *argv[])
     options.fuzz_method[0] = 0;
     options.fuzz_offset = 0;
     options.fuzz_iterations = 1000;
+    options.enable_socket_fuzzing = false;
     options.func_args = NULL;
     options.num_fuz_args = 0;
     options.callconv = DRWRAP_CALLCONV_DEFAULT;
@@ -878,6 +904,9 @@ options_init(client_id_t id, int argc, const char *argv[])
                 options.callconv = DRWRAP_CALLCONV_MICROSOFT_X64;
             else
                 NOTIFY(0, "Unknown calling convention, using default value instead.\n");
+        }
+        else if (strcmp(token, "-socket_fuzzing") == 0) {
+            options.enable_socket_fuzzing = true;
         }
 		else if (strcmp(token, "-persistence_mode") == 0) {
 			USAGE_CHECK((i + 1) < argc, "missing mode arg: '-fuzz_mode' arg");
