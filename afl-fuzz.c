@@ -2646,7 +2646,9 @@ static u8 run_target(char** argv, u32 timeout) {
 	  //saves us from getting stuck in corner case.
 	  MemoryBarrier();
 	  watchdog_enabled = 0;
-	  return FAULT_NONE;
+
+      destroy_target_process(0);
+      return FAULT_TMOUT;
   }
   if (result != 'P')
   {
