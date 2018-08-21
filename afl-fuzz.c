@@ -1454,10 +1454,29 @@ static void setup_shm(void) {
 
 }
 
+char* dlerror(){
+    static char msg[1024] = {0};
+    DWORD errCode = GetLastError();
+    FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM, NULL, errCode, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR) msg, sizeof(msg)/sizeof(msg[0]), NULL);
+    return msg;
+}
 /* Load postprocessor, if available. */
 
 static void setup_post(void) {
-  //not implemented on Windows
+    HMODULE dh;
+    u8* fn = getenv("AFL_POST_LIBRARY");
+    u32 tlen = 6;
+
+    if (!fn) return;
+    ACTF("Loading postprocessor from '%s'...", fn);
+    dh = LoadLibraryA(fn);
+    if (!dh) FATAL("%s", dlerror());
+    post_handler = (u8* (*)(u8*,u32*))GetProcAddress(dh, "afl_postprocess");
+    if (!post_handler) FATAL("Symbol 'afl_postprocess' not found.");
+
+    /* Do a quick test. It's better to segfault now than later =) */
+    post_handler("hello", &tlen); 
+    OKF("Postprocessor installed successfully.");
 }
 
 int compare_filename(const void *a, const void *b) {
