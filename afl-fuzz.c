@@ -29,6 +29,8 @@
 #define _GNU_SOURCE
 #define _FILE_OFFSET_BITS 64
 
+#define WIN32_LEAN_AND_MEAN /* prevent winsock.h to be included in windows.h */
+
 #define _CRT_RAND_S
 #include <windows.h>
 #include <TlHelp32.h>
@@ -57,6 +59,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #pragma comment(lib,"ws2_32.lib") //Winsock Library
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined (__OpenBSD__)
 #  include <sys/sysctl.h>
@@ -86,6 +90,9 @@ static u8  enable_socket_fuzzing = 0; /* Enable network fuzzing           */
 static u8  is_TCP = 1;                /* TCP or UDP                       */
 static u32 target_port = 0x0;         /* Target port to send test cases   */
 static u32 socket_init_delay = SOCKET_INIT_DELAY; /* Socket init delay    */
+static u8  enable_server_mode = 0;    /* Enable server-mode fuzzing       */
+static u8* server_bind_port = "80";   /* WinAFL server's default port     */
+                                      /* to bind on.                      */
 
 static u64 mem_limit  = MEM_LIMIT;    /* Memory cap for child (MB)        */
 
@@ -1475,7 +1482,7 @@ static void setup_post(void) {
     if (!post_handler) FATAL("Symbol 'afl_postprocess' not found.");
 
     /* Do a quick test. It's better to segfault now than later =) */
-    post_handler("hello", &tlen); 
+    post_handler("hello", &tlen);
     OKF("Postprocessor installed successfully.");
 }
 
@@ -2588,19 +2595,55 @@ static void send_data_udp(const char *buf, const int buf_len, int first_time) {
     FATAL("sendto() failed with error code : %d", WSAGetLastError());
 }
 
-void open_file_and_send_data() {
+
+//Define the function prototypes
+typedef int (APIENTRY* server_run)(char*, long);
+typedef int (APIENTRY* server_init)(char*);
+
+// custom server functions
+server_run server_run_ptr = NULL;
+server_init server_init_ptr = NULL;
+
+char *get_test_case(long *fsize)
+{
   /* open generated file */
   s32 fd = out_fd;
   if (out_file != NULL)
     fd = open(out_file, O_RDONLY | O_BINARY);
 
-  long fsize;
-  fsize = lseek(fd, 0, SEEK_END);
+  *fsize = lseek(fd, 0, SEEK_END);
   lseek(fd, 0, SEEK_SET);
 
   /* allocate buffer to read the file */
-  char *buf = malloc(fsize + 1);
-  ck_read(fd, buf, fsize, "input file");
+  char *buf = malloc(*fsize);
+  ck_read(fd, buf, *fsize, "input file");
+
+  return buf;
+}
+
+/* This function is used to call user-defined server routine to send data back into sample */
+static int process_test_case_into_server()
+{
+  int result;
+  long fsize;
+
+  char *buf = get_test_case(&fsize);
+
+  result = server_run_ptr(buf, fsize); /* caller should copy the buffer */
+
+  free(buf);
+
+  if (result == 0)
+    FATAL("Unable to process test case, the user-defined server routine return 0");
+
+  return 1;
+}
+
+/* send data into TCP/UDP socket (winAFL is a client) */
+void open_file_and_send_data() {
+  long fsize;
+
+  char *buf = get_test_case(&fsize);
 
   /* send data over TCP or UDP */
   if (is_TCP)
@@ -2608,7 +2651,6 @@ void open_file_and_send_data() {
   else
     send_data_udp(buf, fsize, fuzz_iterations_current);
 
-  /* free memory */
   free(buf);
 }
 
@@ -2617,7 +2659,7 @@ void open_file_and_send_data() {
 
 static u8 run_target(char** argv, u32 timeout) {
   //todo watchdog timer to detect hangs
-  DWORD num_read;
+  DWORD num_read, dwThreadId;
   char result = 0;
 
   if(sinkhole_stds && devnul_handle == INVALID_HANDLE_VALUE) {
@@ -2635,14 +2677,21 @@ static u8 run_target(char** argv, u32 timeout) {
     }
   }
 
+  if (enable_server_mode) {
+    if (!server_init_ptr(server_bind_port))
+      PFATAL("Unable to initialize server, user-defined server initialization routine returned 0");
+  }
+
   if(!is_child_running()) {
     destroy_target_process(0);
     create_target_process(argv);
     fuzz_iterations_current = 0;
   }
 
-  if (enable_socket_fuzzing)
+  if (enable_socket_fuzzing && !enable_server_mode)
     open_file_and_send_data();
+  else if (enable_server_mode)
+    process_test_case_into_server();
 
   child_timed_out = 0;
   memset(trace_bits, 0, MAP_SIZE);
@@ -7036,7 +7085,7 @@ static void usage(u8* argv0) {
 
        "Execution control settings:\n\n"
 
-       "  -f file       - location read by the fuzzed program (stdin)\n"
+       "  -f file       - location read by the fuzzed program (stdin)\n\n"
  
        "Fuzzing behavior settings:\n\n"
 
@@ -7047,7 +7096,11 @@ static void usage(u8* argv0) {
        "  -a            - IP address to send data in\n"
        "  -U            - Use UDP (default TCP)\n"
        "  -p            - Port to send data in\n"
-       "  -w            - Delay in milliseconds before start sending data\n"
+       "  -w            - Delay in milliseconds before start sending data\n\n"
+
+       "Server mode fuzzing settings:\n\n"
+       "  -l            - A path to custom server DLL for server-mode fuzzing\n"
+       "  -s            - Port for winAFL server to listen on for incoming connections\n\n"
 
        "Other stuff:\n\n"
 
@@ -7651,6 +7704,28 @@ int getopt(int argc, char **argv, char *optstring) {
   }
 }
 
+void load_custom_server_library(const char *libname)
+{
+  int result = 0;
+  SAYF("Loading custom winAFL server library\n");
+  HMODULE hLib = LoadLibraryA(libname);
+  if (hLib == NULL)
+    FATAL("Unable to load custom server library, GetLastError = 0x%x", GetLastError());
+
+  /* init the custom server */
+  // Get pointer to user-defined server initialization function using GetProcAddress:
+  server_init_ptr = (server_init)GetProcAddress(hLib, "_server_init@4");
+  if (server_init_ptr == NULL)
+    FATAL("Unable to load _server_init from the DLL provided by user");
+
+  //Get pointer to user-defined test cases sending function using GetProcAddress:
+  server_run_ptr = (server_run)GetProcAddress(hLib, "_server_run@8");
+  if (server_run_ptr == NULL)
+    FATAL("Unable to load _server_run from the DLL provided by user");
+
+  SAYF("Sucessfully loaded and initalized\n");
+}
+
 /* Main entry point */
 int main(int argc, char** argv) {
 
@@ -7680,7 +7755,7 @@ int main(int argc, char** argv) {
   dynamorio_dir = NULL;
   client_params = NULL;
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:I:T:dYnCB:S:M:x:QD:b:Ua:p:w:")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:t:I:T:dYnCB:S:M:x:QD:b:Ua:p:w:s:L:l:")) > 0)
 
     switch (opt) {
       case 'i':
@@ -7872,6 +7947,12 @@ int main(int argc, char** argv) {
 
         break;
 
+      case 's':
+
+        enable_server_mode = 1; /* in this case, port is WinAFL server bind port */
+        server_bind_port = ck_strdup(optarg);
+        break;
+
       case 'U':
         is_TCP = 0;
 
@@ -7890,16 +7971,24 @@ int main(int argc, char** argv) {
 
         break;
 
+      case 'l':
+        load_custom_server_library(optarg);
+
+        break;
+
       default:
 
         usage(argv[0]);
 
     }
 
+  if (!in_dir || !out_dir || !timeout_given || (!drioless && !dynamorio_dir)) usage(argv[0]);
+
   if (enable_socket_fuzzing && (target_ip_address == NULL || target_port == 0))
     FATAL("\nYou forgot to specify either target IP address or port\n");
 
-  if (!in_dir || !out_dir || !timeout_given || (!drioless && !dynamorio_dir)) usage(argv[0]);
+  if (enable_server_mode && (server_init_ptr == NULL || server_run_ptr == NULL))
+    FATAL("\nYou need to specify a path to custom server DLL to enable winAFL server mode fuzzing\n");
 
   extract_client_params(argc, argv);
   optind++;

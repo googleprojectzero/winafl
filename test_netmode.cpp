@@ -23,7 +23,7 @@
 /* cmd line to find the crash:
  * afl-fuzz.exe -U -p 7714 -a 127.0.0.1 -w 1000 -i in -o out -D ..\..\dr_release\bin32
  * -t 20000 -- -target_module test_netmode.exe -target_method recv_func -coverage_module test_netmode.exe
- * -fuzz_iterations 50000 -nargs 1 -- ..\Debug\test_netmode.exe
+ * -fuzz_iterations 50000 -nargs 1 -- test_netmode.exe
  */
 
 #define _CRT_SECURE_NO_WARNINGS

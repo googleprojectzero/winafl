@@ -14,6 +14,7 @@ project(test_netmode)
 
 add_executable(test_netmode test_netmode.cpp)
 
+add_executable(test_servermode test_simple_winsock_client.cpp)
 
 if(NOT "${CMAKE_GENERATOR}" MATCHES "(Win64)")
 
@@ -91,3 +92,4 @@ if (NOT (MSVC_VERSION LESS 1900))
   target_link_libraries(winafl "libvcruntime.lib")
 endif()
 
+add_library(custom_winafl_server SHARED custom_winafl_server.cpp)
