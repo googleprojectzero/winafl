@@ -92,4 +92,6 @@ if (NOT (MSVC_VERSION LESS 1900))
   target_link_libraries(winafl "libvcruntime.lib")
 endif()
 
-add_library(custom_winafl_server SHARED custom_winafl_server.cpp)
+add_library(custom_winafl_server SHARED custom_winafl_server.c)
+
+add_library(custom_net_fuzzer SHARED custom_net_fuzzer.c)

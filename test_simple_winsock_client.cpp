@@ -21,11 +21,11 @@ limitations under the License.
 */
 
 /* cmd line to launch the fuzzer:
-afl-fuzz.exe -l custom_winafl_server.dll -s 1337 -i in -o out -D ..\..\dr_release\bin32 
--t 20000 -- -target_module simple_winsock_client.exe -target_method main -coverage_module 
-simple_winsock_client.exe -fuzz_iterations 5000 -nargs 1 -- simple_winsock_client.exe
-127.0.0.1
-*/
+ * set AFL_CUSTOM_DLL_ARGS=1337
+ * afl-fuzz.exe -l custom_winafl_server.dll -i in -o out -D ..\..\dr_release\bin32 
+ * -t 20000 -- -target_module test_servermode.exe -target_method main -coverage_module
+ * test_servermode.exe -fuzz_iterations 5000 -nargs 2 -- test_servermode.exe 127.0.0.1
+ */
 
 /* TODO: improve performance of this client under fuzzer */
 
@@ -160,6 +160,7 @@ int __cdecl main(int argc, char **argv)
 		WSACleanup();
 		return 1;
 	}
+
 	printf("Bytes Sent: %ld\n", iResult);
 
 	// shutdown the connection since no more data will be sent

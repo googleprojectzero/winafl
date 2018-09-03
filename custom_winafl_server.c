@@ -30,9 +30,12 @@ static SOCKET ClientSocket = INVALID_SOCKET;
 //#define DEBUG_SERVER 1
 
 /* open data and send it back into TCP/UDP socket (winAFL is a server) */
-static int open_file_and_send_response(char *buf, long fsize, SOCKET ClientSocket) {
+static int send_response(char *buf, long fsize, SOCKET ClientSocket) {
 	/* send our test case */
-	int iSendResult = send(ClientSocket, buf, fsize, 0);
+#ifdef DEBUG_SERVER
+    printf("Sending %s\n", buf);
+#endif
+    int iSendResult = send(ClientSocket, buf, fsize, 0);
 	if (iSendResult == SOCKET_ERROR) {
 		printf("send failed with error: %d\n", WSAGetLastError());
 		closesocket(ClientSocket);
@@ -75,18 +78,101 @@ static int recv_loop(SOCKET ClientSocket) {
 	return 1;
 }
 
+#define DEFAULT_BUFLEN 4096
+
+typedef struct _test_case_struct {
+	long size;
+	char *data;
+} test_case_struct;
+
+/* server-mode routings */
+DWORD WINAPI handle_incoming_connection(LPVOID lpParam) {
+	static int iResult;
+	test_case_struct *test_case = (test_case_struct *)lpParam;
+
+#ifdef DEBUG_SERVER
+	printf("Handling incoming connections\n");
+#endif
+
+	// Accept a client socket
+	ClientSocket = accept(ListenSocket, NULL, NULL);
+	if (ClientSocket == INVALID_SOCKET) {
+		printf("accept failed with error: %d\n", WSAGetLastError());
+		closesocket(ListenSocket);
+		WSACleanup();
+		ExitProcess(-1);
+		return 0;
+	}
+
+	recv_loop(ClientSocket);
+
+	/* answer with test case to our client */
+	int res = send_response(test_case->data, test_case->size, ClientSocket);
+
+	if (!res) {
+		printf("Failed to send response");
+		ExitProcess(-1);
+		return 0;
+	}
+
+	// shutdown the connection since we're done
+	iResult = shutdown(ClientSocket, SD_SEND);
+	if (iResult == SOCKET_ERROR) {
+		printf("shutdown failed with error: %d\n", WSAGetLastError());
+		closesocket(ClientSocket);
+		WSACleanup();
+		ExitProcess(-1);
+		return 0;
+	}
+	free(test_case->data);
+	free(test_case);
+	return 1;
+}
+
+HANDLE hr = NULL;
+
+CUSTOM_SERVER_API int APIENTRY dll_run(char *data, long size, int fuzz_iterations) {
+	DWORD dwThreadId;
+	test_case_struct *test_case = (test_case_struct *)malloc(sizeof(test_case_struct));
+	test_case->data = (char *)malloc(size);
+
+	memcpy(test_case->data, data, size);
+	test_case->size = size;
+
+	/* we have to create a second thread to avoid blocking winAFL in recv */
+	if (hr != NULL)
+		WaitForSingleObject(hr, INFINITE); /* we have to wait our previous thread to finish exec */
+	hr = CreateThread(NULL, 0, handle_incoming_connection, (LPVOID)test_case, 0, &dwThreadId);
+	if (hr == NULL)
+		return 0;
+
+	return 1;
+}
+
+void usage() {
+	printf("Please setup AFL_CUSTOM_DLL_ARGS=<port_number>\n");
+	exit(1);
+}
+
 /* winAFL is a TCP server now (TODO: implement UDP server) */
-CUSTOM_SERVER_API int APIENTRY server_init(char *server_bind_port) {
+CUSTOM_SERVER_API int APIENTRY dll_init() {
 	static WSADATA wsaData;
 	static int iResult;
-
+    s32 opt;
 	static struct addrinfo *result = NULL;
 	static struct addrinfo hints;
 	static int iSendResult;
+
 	static int first_time = 0x1;
+    unsigned char *server_bind_port = NULL;
 
 	if (!first_time)
 		return 1;
+
+    server_bind_port = getenv("AFL_CUSTOM_DLL_ARGS");
+    printf("%s");
+    if (server_bind_port == NULL)
+        usage();
 
 	printf("Initializing custom winAFL server\n");
 
@@ -141,79 +227,8 @@ CUSTOM_SERVER_API int APIENTRY server_init(char *server_bind_port) {
 		return 0;
 	}
 
-	printf("WinAFL server is listening on port %s", server_bind_port);
+	printf("WinAFL server is listening on port %s\n", server_bind_port);
 	first_time = 0x0;
-
-	return 1;
-}
-
-#define DEFAULT_BUFLEN 4096
-
-typedef struct _test_case_struct {
-	long size;
-	char *data;
-} test_case_struct;
-
-/* server-mode routings */
-DWORD WINAPI handle_incoming_connection(LPVOID lpParam) {
-	static int iResult;
-	test_case_struct *test_case = (test_case_struct *)lpParam;
-
-#ifdef DEBUG_SERVER
-	printf("Handling incoming connections\n");
-#endif
-
-	// Accept a client socket
-	ClientSocket = accept(ListenSocket, NULL, NULL);
-	if (ClientSocket == INVALID_SOCKET) {
-		printf("accept failed with error: %d\n", WSAGetLastError());
-		closesocket(ListenSocket);
-		WSACleanup();
-		ExitProcess(-1);
-		return 0;
-	}
-
-	recv_loop(ClientSocket);
-
-	/* answer with test case to our client */
-	int res = open_file_and_send_response(test_case->data, test_case->size, ClientSocket);
-
-	if (!res) {
-		printf("Failed to send response");
-		ExitProcess(-1);
-		return 0;
-	}
-
-	// shutdown the connection since we're done
-	iResult = shutdown(ClientSocket, SD_SEND);
-	if (iResult == SOCKET_ERROR) {
-		printf("shutdown failed with error: %d\n", WSAGetLastError());
-		closesocket(ClientSocket);
-		WSACleanup();
-		ExitProcess(-1);
-		return 0;
-	}
-	free(test_case->data);
-	free(test_case);
-	return 1;
-}
-
-HANDLE hr = NULL;
-
-CUSTOM_SERVER_API int APIENTRY server_run(char *data, long size) {
-	DWORD dwThreadId;
-	test_case_struct *test_case = (test_case_struct *)malloc(sizeof(test_case_struct));
-	test_case->data = (char *)malloc(size);
-
-	memcpy(test_case->data, data, size);
-	test_case->size = size;
-
-	/* we have to create a second thread to avoid blocking winAFL in recv */
-	if (hr != NULL)
-		WaitForSingleObject(hr, INFINITE); /* we have to wait our previous thread to finish exec */
-	hr = CreateThread(NULL, 0, handle_incoming_connection, (LPVOID)test_case, 0, &dwThreadId);
-	if (hr == NULL)
-		return 0;
 
 	return 1;
 }

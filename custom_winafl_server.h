@@ -22,19 +22,30 @@ limitations under the License.
 #pragma once
 
 #define WIN32_LEAN_AND_MEAN /* prevent winsock.h to be included in windows.h */
+
 #include <stdio.h>
 #include <tchar.h>
 #include <Windows.h>
 #include <wininet.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <stdlib.h>
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
+
 #pragma comment(lib,"ws2_32.lib") //Winsock Library
 #pragma comment( lib, "wininet")
 
-#define CUSTOM_SERVER_API extern "C" __declspec(dllexport)
+#include "alloc-inl.h"
 
-CUSTOM_SERVER_API int APIENTRY server_init(char *server_bind_port);
-CUSTOM_SERVER_API int APIENTRY server_run(char *data, long size);
+#define CUSTOM_SERVER_API __declspec(dllexport)
+
+CUSTOM_SERVER_API int APIENTRY dll_init();
+CUSTOM_SERVER_API int APIENTRY dll_run(char *data, long size, int fuzz_iterations);
+
+/* Default delay in milliseconds to let the target open a socket and start listen for
+ * incoming packages.
+*/
+#define SOCKET_INIT_DELAY 30000
