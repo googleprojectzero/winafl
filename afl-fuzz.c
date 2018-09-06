@@ -111,8 +111,7 @@ static u8  skip_deterministic,        /* Skip deterministic stages?       */
            run_over10m,               /* Run time over 10 minutes?        */
            persistent_mode,           /* Running in persistent mode?      */
            drioless = 0;              /* Running without DRIO?            */
-           custom_dll_defined = 0;    /* Custom DLL path defined ?       */
-           enable_socket_fuzzing = 0; /* Enable network fuzzing           */
+           custom_dll_defined = 0;    /* Custom DLL path defined ?        */
 
 static s32 out_fd,                    /* Persistent fd for out_file       */
            dev_urandom_fd = -1,       /* Persistent fd for /dev/urandom   */
@@ -2294,9 +2293,8 @@ static void create_target_process(char** argv) {
   } else {
     pidfile = alloc_printf("childpid_%s.txt", fuzzer_id);
     cmd = alloc_printf(
-        "%s\\drrun.exe -pidfile %s -no_follow_children -c winafl.dll %s %s -fuzzer_id %s -- %s",
-        dynamorio_dir, pidfile, client_params, (enable_socket_fuzzing == 1) ? "-socket_fuzzing": "",
-        fuzzer_id, target_cmd);
+        "%s\\drrun.exe -pidfile %s -no_follow_children -c winafl.dll %s -fuzzer_id %s -- %s",
+        dynamorio_dir, pidfile, client_params, fuzzer_id, target_cmd);
   }
   if(mem_limit || cpu_aff) {
     hJob = CreateJobObject(NULL, NULL);
@@ -7000,8 +6998,7 @@ static void usage(u8* argv0) {
        "  -I msec       - timeout for process initialization and first run\n"
        "  -T text       - text banner to show on the screen\n"
        "  -M \\ -S id    - distributed mode (see parallel_fuzzing.txt)\n"
-       "  -l path       - a path to user-defined DLL for custom test cases processing\n"
-       "  -s            - enable socket fuzzing\n"
+       "  -l path       - a path to user-defined DLL for custom test cases processing\n\n"
 
        "For additional tips, please consult %s\\README.\n\n",
 
@@ -7651,7 +7648,7 @@ int main(int argc, char** argv) {
   dynamorio_dir = NULL;
   client_params = NULL;
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:I:T:dYnCB:S:M:x:QD:b:sl:")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:t:I:T:dYnCB:S:M:x:QD:b:l:")) > 0)
 
     switch (opt) {
       case 'i':
@@ -7843,10 +7840,6 @@ int main(int argc, char** argv) {
 
         break;
 
-      case 's':
-        enable_socket_fuzzing = 1;
-
-        break;
       default:
 
         usage(argv[0]);

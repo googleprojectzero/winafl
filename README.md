@@ -374,7 +374,7 @@ WinAFL's ```custom_net_fuzzer.dll``` allows winAFL to perform network-based appl
 ```
 For example, if your application receives network packets via UDP protocol at port 7714 you should setup environment variable in the following way: ```set AFL_CUSTOM_DLL_ARGS=-U -p 7714 -a 127.0.0.1 -w 1000 ```
 
-Moreover, you need to enable socket fuzzing via winAFL's option ```-s```. You still need to find target function and make sure that this function receives data from the network, parses it, and returns normally. It is very important to emphasize that in case of network-based fuzzing, the option ```-fuzz_iterations``` is considered as a number of test cases winAFL should send over network before it completely restarts target application.
+You still need to find target function and make sure that this function receives data from the network, parses it, and returns normally. Also, you can use in-app persistence mode described below if your application runs the target function in a loop by its own.
 
 Additionally, this mode is considered as experimental since we have experienced some problems with stability and performance. However, we found this option very usefull and managed to find several vulnerabilities in network-based applications (e.g. in Kollective Kontiki listed above).
 
