@@ -93,7 +93,7 @@ typedef struct _winafl_option_t {
     int num_fuz_args;
     drwrap_callconv_t callconv;
     bool thread_coverage;
-    bool enable_socket_fuzzing;
+    bool no_loop;
 } winafl_option_t;
 static winafl_option_t options;
 
@@ -508,7 +508,7 @@ pre_fuzz_handler(void *wrapcxt, INOUT void **user_data)
     }
 
     //save or restore arguments
-    if (!options.enable_socket_fuzzing) {
+    if (!options.no_loop) {
         if (fuzz_target.iteration == 0) {
             for (i = 0; i < options.num_fuz_args; i++)
                 options.func_args[i] = drwrap_get_arg(wrapcxt, i);
@@ -541,7 +541,7 @@ post_fuzz_handler(void *wrapcxt, void *user_data)
     }
 
     /* We don't need to reload context in case of network-based fuzzing. */
-    if (options.enable_socket_fuzzing)
+    if (options.no_loop)
         return;
 
     fuzz_target.iteration++;
@@ -819,7 +819,7 @@ options_init(client_id_t id, int argc, const char *argv[])
     options.fuzz_method[0] = 0;
     options.fuzz_offset = 0;
     options.fuzz_iterations = 1000;
-    options.enable_socket_fuzzing = false;
+    options.no_loop = false;
     options.func_args = NULL;
     options.num_fuz_args = 0;
     options.callconv = DRWRAP_CALLCONV_DEFAULT;
@@ -905,8 +905,8 @@ options_init(client_id_t id, int argc, const char *argv[])
             else
                 NOTIFY(0, "Unknown calling convention, using default value instead.\n");
         }
-        else if (strcmp(token, "-socket_fuzzing") == 0) {
-            options.enable_socket_fuzzing = true;
+        else if (strcmp(token, "-no_loop") == 0) {
+            options.no_loop = true;
         }
 		else if (strcmp(token, "-persistence_mode") == 0) {
 			USAGE_CHECK((i + 1) < argc, "missing mode arg: '-fuzz_mode' arg");

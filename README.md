@@ -339,9 +339,23 @@ Examples of use:
 <img alt="winafl-cmin.py" src="screenshots/winafl-cmin.py.png"/>
 </p>
 
-## Network fuzzing mode
+## Custom test cases processing
 
-Recently, WinAFL started supporting of network-based applications fuzzing that receive and parse network data. There are several winAFL options to control this process:
+WinAFL supports third party DLLs that can be used to define custom test-cases processing (e.g. to send test cases over network). To enable this option, you need to specify ```-l <path>``` argument.
+The DLL should export the following two functions:
+```
+dll_init()
+dll_run(char *data, long size, int fuzz_iterations)
+data - content of test case
+size - size of test case
+fuzz_iterations - defines a current fuzzing iteration number
+```
+
+We have implemented two sample DLLs for network-based applications fuzzing that you can customize for your own purposes.
+
+### Network fuzzing
+
+WinAFL's ```custom_net_fuzzer.dll``` allows winAFL to perform network-based applications fuzzing that receive and parse network data. There are several options supported by this DLL that should be provided via the environment variable ```AFL_CUSTOM_DLL_ARGS```:
 
 ```
   -a IP address - IP address to send data in
@@ -349,12 +363,13 @@ Recently, WinAFL started supporting of network-based applications fuzzing that r
   -p port       - port to send data in
   -w msec       - delay in milliseconds before actually start fuzzing
 ```
+For example, if your application receives network packets via UDP protocol at port 7714 you should setup environment variable in the following way: ```set AFL_CUSTOM_DLL_ARGS=-U -p 7714 -a 127.0.0.1 -w 1000 ```
 
-Basically, you need to add IP address and port to existent winAFL command line arguments to send your test cases over network. You still need to find target function and make sure that this function receives data from network, parses it, and returns normally. It is very important to emphasize that in case of network-based fuzzing, the option ```-fuzz_iterations``` is considered as a number of test cases winAFL should send over network before it completely restarts
-target application.
+You still need to find target function and make sure that this function receives data from the network, parses it, and returns normally. Also, you can use In App Persistence mode described above if your application runs the target function in a loop by its own.
 
-Additionally, this mode is considered as experimental since we have experienced some problems with stability and performance. However, we
-found this option very usefull and managed to find several vulnerabilities in network-based applications (e.g. in Kollective Kontiki listed above).
+Additionally, this mode is considered as experimental since we have experienced some problems with stability and performance. However, we found this option very usefull and managed to find several vulnerabilities in network-based applications (e.g. in Kollective Kontiki listed above).
+
+There is a second DLL ```custom_winafl_server.dll``` that allows winAFL to act as a server and perform fuzzing of client-based applications. All you need is to setup port to listen on for incoming connections from your target application. The environment variable ```AFL_CUSTOM_DLL_ARGS=<port_id>``` should be used for this purpose.
 
 ## Statically instrument a binary via [syzygy](https://github.com/google/syzygy)
 

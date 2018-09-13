@@ -21,20 +21,24 @@
 */
 
 /* cmd line to find the crash:
- * afl-fuzz.exe -U -p 7714 -a 127.0.0.1 -w 1000 -i in -o out -D ..\..\dr_release\bin32
- * -t 20000 -- -target_module test_netmode.exe -target_method recv_func -coverage_module test_netmode.exe
- * -fuzz_iterations 50000 -nargs 1 -- ..\Debug\test_netmode.exe
+ * set AFL_CUSTOM_DLL_ARGS=-U -p 7714 -a 127.0.0.1 -w 1000
+ * C:\Users\max\Desktop\winafl\winafl_fork\build\Debug>afl-fuzz.exe -l custom_net_fuzzer.dll 
+ * -i in -o out -D ..\..\dr_release\bin32 -t 20000 -- -target_module test_netmode.exe -target_method 
+ * recv_func -coverage_module test_netmode.exe -fuzz_iterations 5000 -nargs 1 -- test_netmode.exe
  */
 
 #define _CRT_SECURE_NO_WARNINGS
 #include <stdio.h>
 #include <windows.h>
 #include <string.h>
+#include <stdlib.h>
 
 #pragma comment(lib,"ws2_32.lib") //Winsock Library
 
 #define DEFAULT_PORT 7714
 #define BUFSIZE 4096
+
+/* TODO: test for TCP */
 
 void error(const char *msg) {
 	printf("[ERROR] %s %d\n", msg, WSAGetLastError());
