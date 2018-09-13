@@ -341,15 +341,6 @@ Examples of use:
 
 ## Custom test cases processing
 
-WinAFL supports third party DLLs that can be used to define custom test-cases processing (e.g. to send test case over network). To enable this option, you need to specify ```-l <path>``` argument.
-The DLL should export the following two functions:
-```
-dll_init()
-dll_run(char *data, long size, int fuzz_iterations) where data - content of test case, size - size of test case, fuzz_iterations - defines a current fuzzing iteration #
-```
-
-## Custom test cases processing
-
 WinAFL supports third party DLLs that can be used to define custom test-cases processing (e.g. to send test cases over network). To enable this option, you need to specify ```-l <path>``` argument.
 The DLL should export the following two functions:
 ```
