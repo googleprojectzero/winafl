@@ -6,8 +6,8 @@ ChangeLog
 Version 1.14 (based on afl 2.43b):
 ----------------------------------
   
-  - Added support of third-party DLLs for custom test cases processing
-    This currently comes with (experimental) examples for network fuzzing
+  - Added support for third-party DLLs for custom test cases processing
+    This currently comes with (experimental) network fuzzing implementation
     (both server- and client- side)
     Contributed by Maksim Shudrak
 
