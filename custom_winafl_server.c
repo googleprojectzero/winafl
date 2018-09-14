@@ -170,7 +170,6 @@ CUSTOM_SERVER_API int APIENTRY dll_init() {
 		return 1;
 
     server_bind_port = getenv("AFL_CUSTOM_DLL_ARGS");
-    printf("%s");
     if (server_bind_port == NULL)
         usage();
 
