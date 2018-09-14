@@ -19,19 +19,19 @@ Version 1.14 (based on afl 2.43b):
     Contributed by Quang Nguyễn
 
   - Added separate timeout for process initialize
-    Contributed by netanel01
+    Contributed by Netanel Ben Simon
 
   - Added color support to afl-showmap & afl-tmin
-    Contributed by yoava333
+    Contributed by Yoav Alon
 
   - added winafl-plot.py a winafl replacement for afl-plot
-    Contributed by yoava333
+    Contributed by Yoav Alon
 
   - added winafl-whatsup.py a winafl replacement for afl-whatsup
-    Contributed by yoava333
+    Contributed by Yoav Alon
 
   - Fixed compilation issue on newer versions of DynamoRIO
-    Contributed by yoava333
+    Contributed by Yoav Alon
     
   - Other minor fixes and improvements
 
