@@ -81,7 +81,7 @@ source directory).
 ```
 mkdir build32
 cd build32
-cmake .. -DDynamoRIO_DIR=..\path\to\DynamoRIO\cmake
+cmake -G"Visual Studio 15 2017" .. -DDynamoRIO_DIR=..\path\to\DynamoRIO\cmake
 cmake --build . --config Release
 ```
 
@@ -90,7 +90,7 @@ cmake --build . --config Release
 ```
 mkdir build64
 cd build64
-cmake -G"Visual Studio 10 Win64" .. -DDynamoRIO_DIR=..\path\to\DynamoRIO\cmake
+cmake -G"Visual Studio 15 2017 Win64" .. -DDynamoRIO_DIR=..\path\to\DynamoRIO\cmake
 cmake --build . --config Release
 ```
 
@@ -199,7 +199,7 @@ Example command line:
 
 ```
 path\to\DynamoRIO\bin64\drrun.exe -c winafl.dll -debug
--target_module test_gdiplus.exe -target_offset 0x1270 -fuzz_iterations 10
+-target_module test_gdiplus.exe -target_offset 0x16e0 -fuzz_iterations 10
 -nargs 2 -- test_gdiplus.exe input.bmp
 ```
 
@@ -240,7 +240,7 @@ An example command line would look like:
 ```
 afl-fuzz.exe -i in -o out -D C:\work\winafl\DynamoRIO\bin64 -t 20000 --
 -coverage_module gdiplus.dll -coverage_module WindowsCodecs.dll
--fuzz_iterations 5000 -target_module test_gdiplus.exe -target_offset 0x1270
+-fuzz_iterations 5000 -target_module test_gdiplus.exe -target_offset 0x16e0
 -nargs 2 -- test_gdiplus.exe @@
 ```
 
