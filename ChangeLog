@@ -18,7 +18,7 @@ Version 1.14 (based on afl 2.43b):
   - Implemented setup_post on Windows
     Contributed by Quang Nguyễn
 
-  - Added separate timeout for process initialize
+  - Added separate timeout for process initialization and the first run
     Contributed by Netanel Ben Simon
 
   - Added color support to afl-showmap & afl-tmin
