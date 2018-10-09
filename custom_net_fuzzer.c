@@ -72,6 +72,9 @@ static void send_data_tcp(const char *buf, const int buf_len, int first_time) {
     // shutdown the connection since no more data will be sent
     if (shutdown(s, 0x1/*SD_SEND*/) == SOCKET_ERROR)
         FATAL("shutdown failed with error: %d\n", WSAGetLastError());
+    // close the socket to avoid consuming much resources
+    if (closesocket(s) == SOCKET_ERROR)
+        FATAL("closesocket failed with error: %d\n", WSAGetLastError());
 }
 
 static void send_data_udp(const char *buf, const int buf_len, int first_time) {
