@@ -375,6 +375,18 @@ Additionally, this mode is considered as experimental since we have experienced 
 
 There is a second DLL ```custom_winafl_server.dll``` that allows winAFL to act as a server and perform fuzzing of client-based applications. All you need is to setup port to listen on for incoming connections from your target application. The environment variable ```AFL_CUSTOM_DLL_ARGS=<port_id>``` should be used for this purpose.
 
+#### Note
+In case of server fuzzing, if the server socket has the `SO_REUSEADDR` option set like the following code, then this may case `10055` error after some time fuzzing due to the accumulation of `TIME_WAIT` sockets when WinAFL restart the fuzzing process. 
+```
+setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(int));
+```
+
+To avoid this replace the `SO_REUSEADDR` option by `SO_LINGER` option in the server source code if availabe.
+```
+setsockopt(s, SOL_SOCKET, SO_LINGER, (char*)&opt, sizeof(int));
+```
+
+
 ## Statically instrument a binary via [syzygy](https://github.com/google/syzygy)
 
 ### Background
