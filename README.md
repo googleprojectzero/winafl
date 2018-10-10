@@ -55,7 +55,7 @@ user wants to fuzz) and instrumenting it so that it runs in a loop.
 WinAFL has been successfully used to identify bugs in Windows software, such as
 
  * [Microsoft] CVE-2016-7212 - found by Aral Yaman of Noser Engineering AG
- * [Microsoft] CVE-2017-0073, CVE-2017-0190, CVE-2017-11816, CVE-2018-8472 - found by [Symeon Paraschoudis](https://twitter.com/symeonp) of SensePost
+ * [Microsoft] CVE-2017-0073, CVE-2017-0190, CVE-2017-11816, CVE-2018-8472 - found by [Symeon Paraschoudis](https://twitter.com/symeonp)
  * [Microsoft] CVE-2018-8494 - found by Guy Inbar (guyio)
  * [Adobe] CVE-2018-4985, CVE-2018-5063, CVE-2018-5064, CVE-2018-5065, CVE-2018-5068, CVE-2018-5069, CVE-2018-5070, CVE-2018-12754, CVE-2018-12755, CVE-2018-12764, CVE-2018-12765, CVE-2018-12766, CVE-2018-12767, CVE-2018-12768, CVE-2018-12848, CVE-2018-12849, CVE-2018-12850, CVE-2018-12840 - found by Yoav Alon and Netanel Ben-Simon from Check Point Software Technologies
  * [Adobe] CVE-2018-12853 - found by Guy Inbar (guyio)
