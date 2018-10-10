@@ -30,6 +30,10 @@
 #include "types.h"
 #include "config.h"
 
+#ifndef ENABLE_VIRTUAL_TERMINAL_PROCESSING
+#define ENABLE_VIRTUAL_TERMINAL_PROCESSING 0x0004
+#endif
+
 /*******************
  * Terminal colors *
  *******************/
@@ -122,17 +126,23 @@
  * Misc terminal codes *
  ***********************/
 
-//#define TERM_HOME     "\x1b[H"
-//#define TERM_CLEAR    TERM_HOME "\x1b[2J"
-//#define cEOL          "\x1b[0K"
-//#define CURSOR_HIDE   "\x1b[?25l"
-//#define CURSOR_SHOW   "\x1b[?25h"
+#ifdef USE_COLOR
+
+#define TERM_HOME     "\x1b[H"
+#define TERM_CLEAR    TERM_HOME "\x1b[2J"
+#define cEOL          "\x1b[0K"
+#define CURSOR_HIDE   "\x1b[?25l"
+#define CURSOR_SHOW   "\x1b[?25h"
+
+#else
 
 #define TERM_HOME     ""
 #define TERM_CLEAR    ""
 #define cEOL          ""
 #define CURSOR_HIDE   ""
 #define CURSOR_SHOW   ""
+
+#endif /* ^USE_COLORS */
 
 /************************
  * Debug & error macros *
@@ -224,5 +234,24 @@
     s32 _res = _read(fd, buf, _len); \
     if (_res != _len) RPFATAL(_res, "Short read from %s", fn); \
   } while (0)
+
+
+static void enable_ansi_console(void) {
+  // Set output mode to handle virtual terminal sequences
+  DWORD mode = 0;
+  HANDLE console_handle = GetStdHandle(STD_OUTPUT_HANDLE);
+  if (console_handle == INVALID_HANDLE_VALUE) {
+    return;
+  }
+
+  if (!GetConsoleMode(console_handle, &mode)) {
+    return;
+  }
+
+  mode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+  // Ignore errors
+  SetConsoleMode(console_handle, mode);
+}
+
 
 #endif /* ! _HAVE_DEBUG_H */

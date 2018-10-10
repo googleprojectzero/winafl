@@ -21,7 +21,6 @@
    limitations under the License.
 
  */
-
 #define _CRT_SECURE_NO_WARNINGS
 
 #define AFL_MAIN
@@ -30,14 +29,17 @@
 #define _GNU_SOURCE
 #define _FILE_OFFSET_BITS 64
 
+#define WIN32_LEAN_AND_MEAN /* prevent winsock.h to be included in windows.h */
+
 #define _CRT_RAND_S
 #include <windows.h>
+#include <TlHelp32.h>
 #include <stdarg.h>
 #include <io.h>
 #include <direct.h>
 
 #define VERSION "2.43b"
-#define WINAFL_VERSION "1.09"
+#define WINAFL_VERSION "1.14"
 
 #include "config.h"
 #include "types.h"
@@ -61,7 +63,6 @@
 #  include <sys/sysctl.h>
 #endif /* __APPLE__ || __FreeBSD__ || __OpenBSD__ */
 
-
 /* Lots of globals, but mostly for the status UI and other things where it
    really makes no sense to haul them around as function parameters. */
 
@@ -77,7 +78,9 @@ static u8 *in_dir,                    /* Input directory with test cases  */
           *target_cmd,                /* command line of target           */
           *orig_cmdline;              /* Original command line            */
 
+
 static u32 exec_tmout = EXEC_TIMEOUT; /* Configurable exec timeout (ms)   */
+static u32 init_tmout = 0;            /* Configurable init timeout (ms)   */
 static u32 hang_tmout = EXEC_TIMEOUT; /* Timeout used for hang det (ms)   */
 
 static u64 mem_limit  = MEM_LIMIT;    /* Memory cap for child (MB)        */
@@ -106,7 +109,9 @@ static u8  skip_deterministic,        /* Skip deterministic stages?       */
            qemu_mode,                 /* Running in QEMU mode?            */
            skip_requested,            /* Skip request, via SIGUSR1        */
            run_over10m,               /* Run time over 10 minutes?        */
-           persistent_mode;           /* Running in persistent mode?      */
+           persistent_mode,           /* Running in persistent mode?      */
+           drioless = 0;              /* Running without DRIO?            */
+           custom_dll_defined = 0;    /* Custom DLL path defined ?        */
 
 static s32 out_fd,                    /* Persistent fd for out_file       */
            dev_urandom_fd = -1,       /* Persistent fd for /dev/urandom   */
@@ -120,7 +125,7 @@ static s32 out_fd,                    /* Persistent fd for out_file       */
 HANDLE child_handle, child_thread_handle;
 char *dynamorio_dir;
 char *client_params;
-int fuzz_iterations_max, fuzz_iterations_current;
+int fuzz_iterations_max = 5000, fuzz_iterations_current;
 
 CRITICAL_SECTION critical_section;
 u64 watchdog_timeout_time;
@@ -136,6 +141,8 @@ static u8  var_bytes[MAP_SIZE];       /* Bytes that appear to be variable */
 
 static HANDLE shm_handle;             /* Handle of the SHM region         */
 static HANDLE pipe_handle;            /* Handle of the name pipe          */
+static OVERLAPPED pipe_overlapped;    /* Overlapped structure of pipe     */
+
 static char   *fuzzer_id = NULL;      /* The fuzzer ID or a randomized 
                                          seed allowing multiple instances */
 static HANDLE devnul_handle;          /* Handle of the nul device         */
@@ -211,6 +218,8 @@ static u64 total_bitmap_size,         /* Total bit count for all bitmaps  */
            total_bitmap_entries;      /* Number of bitmaps counted        */
 
 static u32 cpu_core_count;            /* CPU core count                   */
+
+static u64 cpu_aff = 0;       	      /* Selected CPU core                */
 
 static FILE* plot_file;               /* Gnuplot output file              */
 
@@ -313,6 +322,7 @@ enum {
 };
 
 
+
 /* Get unix time in milliseconds */
 
 static u64 get_cur_time(void) {
@@ -352,8 +362,8 @@ static inline u32 UR(u32 limit) {
 
     u32 seed[2];
 
-	rand_s(&seed[0]);
-	rand_s(&seed[1]);
+    rand_s(&seed[0]);
+    rand_s(&seed[1]);
 
     srand(seed[0]);
     rand_cnt = (RESEED_RNG / 2) + (seed[1] % RESEED_RNG);
@@ -380,6 +390,142 @@ static void shuffle_ptrs(void** ptrs, u32 cnt) {
 
   }
 
+}
+
+
+static u64 get_process_affinity(u32 process_id) {
+
+  /* if we can't get process affinity we treat it as if he doesn't have affinity */
+  u64 affinity = -1ULL;
+  DWORD_PTR process_affinity_mask = 0;
+  DWORD_PTR system_affinity_mask = 0;
+
+  HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, process_id);
+  if (process == NULL) {
+    return affinity;
+  }
+
+  if (GetProcessAffinityMask(process, &process_affinity_mask, &system_affinity_mask)) {
+    affinity = (u64)process_affinity_mask;
+  }
+
+  CloseHandle(process);
+
+  return affinity;
+}
+
+static u32 count_mask_bits(u64 mask) {
+
+  u32 count = 0;
+
+  while (mask) {
+    if (mask & 1) {
+      count++;
+    }
+    mask >>= 1;
+  }
+
+  return count;
+}
+
+static u32 get_bit_idx(u64 mask) {
+
+  u32 i;
+	
+  for (i = 0; i < 64; i++) {
+    if (mask & (1ULL << i)) {
+      return i;
+    }
+  }
+
+  return 0;
+}
+
+static void bind_to_free_cpu(void) {
+
+  u8 cpu_used[64];
+  u32 i = 0;
+  PROCESSENTRY32 process_entry;
+  HANDLE process_snap = INVALID_HANDLE_VALUE;
+
+  memset(cpu_used, 0, sizeof(cpu_used));
+
+  if (cpu_core_count < 2) return;
+
+  /* Currently winafl doesn't support more than 64 cores */
+  if (cpu_core_count > 64) {
+    SAYF("\n" cLRD "[-] " cRST
+    "Uh-oh, looks like you have %u CPU cores on your system\n"
+    "    winafl doesn't support more than 64 cores at the momement\n"
+    "    you can set AFL_NO_AFFINITY and try again.\n",
+    cpu_core_count);
+    FATAL("Too many cpus for automatic binding");
+  }
+
+  if (getenv("AFL_NO_AFFINITY")) {
+
+    WARNF("Not binding to a CPU core (AFL_NO_AFFINITY set).");
+    return;
+  }
+
+  ACTF("Checking CPU core loadout...");
+
+  /* Introduce some jitter, in case multiple AFL tasks are doing the same
+  thing at the same time... */
+
+  srand(GetTickCount() + GetCurrentProcessId());
+  Sleep(R(1000) * 3);
+
+  process_snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  if (process_snap == INVALID_HANDLE_VALUE) {
+    FATAL("Failed to create snapshot");
+  }
+
+  process_entry.dwSize = sizeof(PROCESSENTRY32);
+  if (!Process32First(process_snap, &process_entry)) {
+    CloseHandle(process_snap);
+    FATAL("Failed to enumerate processes");
+  }
+
+  do {
+    unsigned long cpu_idx = 0;
+    u64 affinity = get_process_affinity(process_entry.th32ProcessID);
+
+    if ((affinity == 0) || (count_mask_bits(affinity) > 1)) continue;
+
+    cpu_idx = get_bit_idx(affinity);
+    cpu_used[cpu_idx] = 1;
+  } while (Process32Next(process_snap, &process_entry));
+
+  CloseHandle(process_snap);
+
+  /* If the user only uses subset of the core, prefer non-sequential cores
+	 to avoid pinning two hyper threads of the same core */
+  for(i = 0; i < cpu_core_count; i += 2) if (!cpu_used[i]) break;
+
+  /* Fallback to the sequential scan */
+  if (i >= cpu_core_count) {
+	for(i = 0; i < cpu_core_count; i++) if (!cpu_used[i]) break;
+  }
+
+  if (i == cpu_core_count) {
+    SAYF("\n" cLRD "[-] " cRST
+    "Uh-oh, looks like all %u CPU cores on your system are allocated to\n"
+    "    other instances of afl-fuzz (or similar CPU-locked tasks). Starting\n"
+    "    another fuzzer on this machine is probably a bad plan, but if you are\n"
+    "    absolutely sure, you can set AFL_NO_AFFINITY and try again.\n",
+    cpu_core_count);
+
+    FATAL("No more free CPU cores");
+
+  }
+
+  OKF("Found a free CPU core, binding to #%u.", i);
+
+  cpu_aff = 1ULL << i;
+  if (!SetProcessAffinityMask(GetCurrentProcess(), (DWORD_PTR)cpu_aff)) {
+    FATAL("Failed to set process affinity");
+  }
 }
 
 
@@ -1305,10 +1451,29 @@ static void setup_shm(void) {
 
 }
 
+char* dlerror(){
+    static char msg[1024] = {0};
+    DWORD errCode = GetLastError();
+    FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM, NULL, errCode, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR) msg, sizeof(msg)/sizeof(msg[0]), NULL);
+    return msg;
+}
 /* Load postprocessor, if available. */
 
 static void setup_post(void) {
-  //not implemented on Windows
+    HMODULE dh;
+    u8* fn = getenv("AFL_POST_LIBRARY");
+    u32 tlen = 6;
+
+    if (!fn) return;
+    ACTF("Loading postprocessor from '%s'...", fn);
+    dh = LoadLibraryA(fn);
+    if (!dh) FATAL("%s", dlerror());
+    post_handler = (u8* (*)(u8*,u32*))GetProcAddress(dh, "afl_postprocess");
+    if (!post_handler) FATAL("Symbol 'afl_postprocess' not found.");
+
+    /* Do a quick test. It's better to segfault now than later =) */
+    post_handler("hello", &tlen);
+    OKF("Postprocessor installed successfully.");
 }
 
 int compare_filename(const void *a, const void *b) {
@@ -1435,6 +1600,12 @@ static void read_testcases(void) {
 
     if (_access(fn, 0) || (st_size < 0))
       PFATAL("Unable to access '%s'", fn);
+
+    if (st_size == 0) {
+      ck_free(fn);
+      ck_free(dfn);
+      continue;
+    }
 
     if (st_size > MAX_FILE) 
       FATAL("Test case '%s' is too big (%s, limit is %s)", fn,
@@ -1646,7 +1817,7 @@ static void load_extras(u8* dir) {
 
   ACTF("Loading extra dictionary from '%s' (level %u)...", dir, dict_level);
 
-  if(in_dir[strlen(dir)-1] == '\\') {
+  if(dir[strlen(dir)-1] == '\\') {
     pattern = alloc_printf("%s*", dir);
   } else {
     pattern = alloc_printf("%s\\*", dir);
@@ -2029,15 +2200,53 @@ char *argv_to_cmd(char** argv) {
   return ret;
 }
 
+/*Initialazing overlapped structure and connecting*/
+static BOOL OverlappedConnectNamedPipe(HANDLE pipe_h, LPOVERLAPPED overlapped)
+{
+	ZeroMemory(overlapped, sizeof(*overlapped));
+	
+	overlapped->hEvent = CreateEvent(
+		NULL,    // default security attribute 
+		TRUE,    // manual-reset event 
+		TRUE,    // initial state = signaled 
+		NULL);   // unnamed event object 
+
+	if (overlapped->hEvent == NULL)
+	{
+		return FALSE;
+	}
+
+	if (ConnectNamedPipe(pipe_h, overlapped))
+	{
+		return FALSE;
+	}
+	switch (GetLastError())
+	{
+		// The overlapped connection in progress. 
+	case ERROR_IO_PENDING:
+		WaitForSingleObject(overlapped->hEvent, INFINITE);
+		return TRUE;
+		// Client is already connected
+	case ERROR_PIPE_CONNECTED:
+		return TRUE;
+	default:
+	{
+		return FALSE;
+	}
+	}
+}
+
 static void create_target_process(char** argv) {
-  char* dr_cmd;
-  char* pipe_name;
+  char *cmd;
+  char *pipe_name;
   char *buf;
   char *pidfile;
   FILE *fp;
   size_t pidsize;
   BOOL inherit_handles = TRUE;
 
+  HANDLE hJob = NULL;
+  JOBOBJECT_EXTENDED_LIMIT_INFORMATION job_limit;
   STARTUPINFO si;
   PROCESS_INFORMATION pi;
 
@@ -2045,7 +2254,8 @@ static void create_target_process(char** argv) {
 
   pipe_handle = CreateNamedPipe(
     pipe_name,                // pipe name
-    PIPE_ACCESS_DUPLEX,       // read/write access
+	PIPE_ACCESS_DUPLEX |     // read/write access 
+	FILE_FLAG_OVERLAPPED,    // overlapped mode 
     0,
     1,                        // max. instances
     512,                      // output buffer size
@@ -2053,22 +2263,15 @@ static void create_target_process(char** argv) {
     20000,                    // client time-out
     NULL);                    // default security attribute
 
-  if (pipe_handle == INVALID_HANDLE_VALUE)
-  {
-      FATAL("CreateNamedPipe failed, GLE=%d.\n", GetLastError());
+  if (pipe_handle == INVALID_HANDLE_VALUE) {
+    FATAL("CreateNamedPipe failed, GLE=%d.\n", GetLastError());
   }
 
   target_cmd = argv_to_cmd(argv);
 
-  pidfile = alloc_printf("childpid_%s.txt", fuzzer_id);
-  dr_cmd = alloc_printf(
-    "%s\\drrun.exe -pidfile %s -no_follow_children -c winafl.dll %s -fuzzer_id %s -- %s",
-    dynamorio_dir, pidfile, client_params, fuzzer_id, target_cmd
-  );
-
-  ZeroMemory( &si, sizeof(si) );
+  ZeroMemory(&si, sizeof(si));
   si.cb = sizeof(si);
-  ZeroMemory( &pi, sizeof(pi) );
+  ZeroMemory(&pi, sizeof(pi));
 
   if(sinkhole_stds) {
     si.hStdOutput = si.hStdError = devnul_handle;
@@ -2077,114 +2280,180 @@ static void create_target_process(char** argv) {
     inherit_handles = FALSE;
   }
 
-  if(!CreateProcess(NULL, dr_cmd, NULL, NULL, inherit_handles, /*CREATE_NO_WINDOW*/0, NULL, NULL, &si, &pi)) {
+  if(drioless) {
+    char *static_config = alloc_printf("%s:%d", fuzzer_id, fuzz_iterations_max);
+
+    if (static_config == NULL) {
+      FATAL("Cannot allocate static_config.");
+    }
+
+    SetEnvironmentVariable("AFL_STATIC_CONFIG", static_config);
+    cmd = alloc_printf("%s", target_cmd);
+    ck_free(static_config);
+  } else {
+    pidfile = alloc_printf("childpid_%s.txt", fuzzer_id);
+    cmd = alloc_printf(
+        "%s\\drrun.exe -pidfile %s -no_follow_children -c winafl.dll %s -fuzzer_id %s -- %s",
+        dynamorio_dir, pidfile, client_params, fuzzer_id, target_cmd);
+  }
+  if(mem_limit || cpu_aff) {
+    hJob = CreateJobObject(NULL, NULL);
+    if(hJob == NULL) {
+      FATAL("CreateJobObject failed, GLE=%d.\n", GetLastError());
+    }
+
+    ZeroMemory(&job_limit, sizeof(job_limit));
+    if (mem_limit) {
+      job_limit.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_PROCESS_MEMORY;
+      job_limit.ProcessMemoryLimit = mem_limit * 1024 * 1024;
+    }
+	
+    if (cpu_aff) {
+      job_limit.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_AFFINITY;
+      job_limit.BasicLimitInformation.Affinity = (DWORD_PTR)cpu_aff;
+    }
+
+    if(!SetInformationJobObject(
+      hJob,
+      JobObjectExtendedLimitInformation,
+      &job_limit,
+      sizeof(job_limit)
+    )) {
+      FATAL("SetInformationJobObject failed, GLE=%d.\n", GetLastError());
+    }
+  }
+
+  if(!CreateProcess(NULL, cmd, NULL, NULL, inherit_handles, CREATE_SUSPENDED, NULL, NULL, &si, &pi)) {
     FATAL("CreateProcess failed, GLE=%d.\n", GetLastError());
   }
 
   child_handle = pi.hProcess;
   child_thread_handle = pi.hThread;
 
+  if(mem_limit || cpu_aff) {
+    if(!AssignProcessToJobObject(hJob, child_handle)) {
+      FATAL("AssignProcessToJobObject failed, GLE=%d.\n", GetLastError());
+    }
+  }
+
+  ResumeThread(child_thread_handle);
+
   watchdog_timeout_time = get_cur_time() + exec_tmout;
   watchdog_enabled = 1;
 
-  if(!ConnectNamedPipe(pipe_handle, NULL)) {
-    if(GetLastError() != ERROR_PIPE_CONNECTED) {
-        FATAL("ConnectNamedPipe failed, GLE=%d.\n", GetLastError());
-    }
+  if(!OverlappedConnectNamedPipe(pipe_handle, &pipe_overlapped)) {
+      FATAL("ConnectNamedPipe failed, GLE=%d.\n", GetLastError());
   }
 
   watchdog_enabled = 0;
 
-  //by the time pipe has connected the pidfile must have been created
-
-  fp = fopen(pidfile, "rb");
-  if(!fp) {
+  if(drioless == 0) {
+    //by the time pipe has connected the pidfile must have been created
+    fp = fopen(pidfile, "rb");
+    if(!fp) {
       FATAL("Error opening pidfile.txt");
+    }
+    fseek(fp,0,SEEK_END);
+    pidsize = ftell(fp);
+    fseek(fp,0,SEEK_SET);
+    buf = (char *)malloc(pidsize+1);
+    fread(buf, pidsize, 1, fp);
+    buf[pidsize] = 0;
+    fclose(fp);
+    remove(pidfile);
+    child_pid = atoi(buf);
+    free(buf);
+    ck_free(pidfile);
   }
-  fseek(fp,0,SEEK_END);
-  pidsize = ftell(fp);
-  fseek(fp,0,SEEK_SET);
-  buf = (char *)malloc(pidsize+1);
-  fread(buf, pidsize, 1, fp);
-  buf[pidsize] = 0;
-  fclose(fp);
-  remove(pidfile);
+  else {
+    child_pid = pi.dwProcessId;
+  }
 
-  child_pid = atoi(buf);
-
-  free(buf);
-  ck_free(pidfile);
   ck_free(target_cmd);
-  ck_free(dr_cmd);
+  ck_free(cmd);
   ck_free(pipe_name);
 }
 
+
 static void destroy_target_process(int wait_exit) {
-  char* kill_cmd;
-  STARTUPINFO si;
-  PROCESS_INFORMATION pi;
+	char* kill_cmd;
+	BOOL still_alive = TRUE;
+	STARTUPINFO si;
+	PROCESS_INFORMATION pi;
 
-  EnterCriticalSection(&critical_section);
+	EnterCriticalSection(&critical_section);
 
-  //nudge the child process
-  if(child_handle) {
-
-	if(WaitForSingleObject(child_handle, wait_exit ) == WAIT_TIMEOUT) {
-
-      kill_cmd = alloc_printf("%s\\drconfig.exe -nudge_pid %d 0 1", dynamorio_dir, child_pid);
-
-      ZeroMemory( &si, sizeof(si) );
-      si.cb = sizeof(si);
-      ZeroMemory( &pi, sizeof(pi) );
-
-      if(!CreateProcess(NULL, kill_cmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
-        FATAL("CreateProcess failed, GLE=%d.\n", GetLastError());
-      }
-
-      CloseHandle(pi.hProcess);
-      CloseHandle(pi.hThread);
-
-      ck_free(kill_cmd);
-
-      //wait until the child process exits
-
-      if(WaitForSingleObject(child_handle, 2000) == WAIT_TIMEOUT) {
-          ZeroMemory( &si, sizeof(si) );
-          si.cb = sizeof(si);
-          ZeroMemory( &pi, sizeof(pi) );
-
-          kill_cmd = alloc_printf("taskkill /PID %d /F", child_pid);
-
-          if(!CreateProcess(NULL, kill_cmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
-            FATAL("CreateProcess failed, GLE=%d.\n", GetLastError());
-          }
-
-          CloseHandle(pi.hProcess);
-          CloseHandle(pi.hThread);
-
-          ck_free(kill_cmd);
-
-		  if(WaitForSingleObject(child_handle, 20000) == WAIT_TIMEOUT) {
-			  FATAL("Cannot kill child process\n");
-		  }
-	  }
+	if (!child_handle) {
+		goto leave;
 	}
 
-    CloseHandle(child_handle);
-    CloseHandle(child_thread_handle);
+	if (WaitForSingleObject(child_handle, wait_exit) != WAIT_TIMEOUT) {
+		goto done;
+	}
 
-    child_handle = NULL;
-  }
+	// nudge the child process only if dynamorio is used
+	if (drioless) {
+		TerminateProcess(child_handle, 0);
+	}
+	else {
+		kill_cmd = alloc_printf("%s\\drconfig.exe -nudge_pid %d 0 1", dynamorio_dir, child_pid);
 
-  //close the pipe
-  if(pipe_handle) {
-    DisconnectNamedPipe(pipe_handle); 
-    CloseHandle(pipe_handle);
+		ZeroMemory(&si, sizeof(si));
+		si.cb = sizeof(si);
+		ZeroMemory(&pi, sizeof(pi));
 
-    pipe_handle = NULL;
-  }
+		if (!CreateProcess(NULL, kill_cmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
+			FATAL("CreateProcess failed, GLE=%d.\n", GetLastError());
+		}
 
-  LeaveCriticalSection(&critical_section);
+		CloseHandle(pi.hProcess);
+		CloseHandle(pi.hThread);
+
+		ck_free(kill_cmd);
+	}
+
+	still_alive = WaitForSingleObject(child_handle, 2000) == WAIT_TIMEOUT;
+
+	if (still_alive) {
+		//wait until the child process exits
+		ZeroMemory(&si, sizeof(si));
+		si.cb = sizeof(si);
+		ZeroMemory(&pi, sizeof(pi));
+
+		kill_cmd = alloc_printf("taskkill /PID %d /F", child_pid);
+
+		if (!CreateProcess(NULL, kill_cmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
+			FATAL("CreateProcess failed, GLE=%d.\n", GetLastError());
+		}
+
+		CloseHandle(pi.hProcess);
+		CloseHandle(pi.hThread);
+
+		ck_free(kill_cmd);
+
+		if (WaitForSingleObject(child_handle, 20000) == WAIT_TIMEOUT) {
+			FATAL("Cannot kill child process\n");
+		}
+	}
+
+done:
+	CloseHandle(child_handle);
+	CloseHandle(child_thread_handle);
+
+	child_handle = NULL;
+	child_thread_handle = NULL;
+
+leave:
+	//close the pipe
+	if (pipe_handle) {
+		DisconnectNamedPipe(pipe_handle);
+		CloseHandle(pipe_handle);
+		CloseHandle(pipe_overlapped.hEvent);
+
+		pipe_handle = NULL;
+	}
+
+	LeaveCriticalSection(&critical_section);
 }
 
 DWORD WINAPI watchdog_timer( LPVOID lpParam ) {
@@ -2198,6 +2467,37 @@ DWORD WINAPI watchdog_timer( LPVOID lpParam ) {
 	}
 }
 
+char ReadCommandFromPipe(u32 timeout)
+{
+	DWORD num_read;
+	char result = 0;
+	if (!is_child_running())
+	{
+		return 0;
+	}
+
+	if (ReadFile(pipe_handle, &result, 1, &num_read, &pipe_overlapped) || GetLastError() == ERROR_IO_PENDING)
+	{
+		//ACTF("ReadFile success or GLE IO_PENDING", result);
+		if (WaitForSingleObject(pipe_overlapped.hEvent, timeout) != WAIT_OBJECT_0) {
+			// took longer than specified timeout or other error - cancel read
+			CancelIo(pipe_handle);
+			WaitForSingleObject(pipe_overlapped.hEvent, INFINITE); //wait for cancelation to finish properly.
+			result = 0;
+		}
+	}
+	//ACTF("ReadFile GLE %d", GetLastError());
+	//ACTF("read from pipe '%c'", result);
+	return result;
+}
+
+void WriteCommandToPipe(char cmd)
+{
+	DWORD num_written;
+	//ACTF("write to pipe '%c'", cmd);
+	WriteFile(pipe_handle, &cmd, 1, &num_written, &pipe_overlapped);
+}
+
 static void setup_watchdog_timer() {
 	watchdog_enabled = 0;
 	InitializeCriticalSection(&critical_section);
@@ -2205,7 +2505,56 @@ static void setup_watchdog_timer() {
 }
 
 static int is_child_running() {
-   return (child_handle && (WaitForSingleObject(child_handle, 0 ) == WAIT_TIMEOUT));
+  int ret;
+
+  EnterCriticalSection(&critical_section);
+  ret = (child_handle && (WaitForSingleObject(child_handle, 0 ) == WAIT_TIMEOUT));
+  LeaveCriticalSection(&critical_section);
+
+  return ret;
+}
+
+//Define the function prototypes
+typedef int (APIENTRY* dll_run)(char*, long, int);
+typedef int (APIENTRY* dll_init)();
+
+// custom server functions
+dll_run dll_run_ptr = NULL;
+dll_init dll_init_ptr = NULL;
+
+char *get_test_case(long *fsize)
+{
+  /* open generated file */
+  s32 fd = out_fd;
+  if (out_file != NULL)
+    fd = open(out_file, O_RDONLY | O_BINARY);
+
+  *fsize = lseek(fd, 0, SEEK_END);
+  lseek(fd, 0, SEEK_SET);
+
+  /* allocate buffer to read the file */
+  char *buf = malloc(*fsize);
+  ck_read(fd, buf, *fsize, "input file");
+
+  return buf;
+}
+
+/* This function is used to call user-defined server routine to send data back into sample */
+static int process_test_case_into_dll(int fuzz_iterations)
+{
+  int result;
+  long fsize;
+
+  char *buf = get_test_case(&fsize);
+
+  result = dll_run_ptr(buf, fsize, fuzz_iterations); /* caller should copy the buffer */
+
+  free(buf);
+
+  if (result == 0)
+    FATAL("Unable to process test case, the user-defined DLL returned 0");
+
+  return 1;
 }
 
 /* Execute target application, monitoring for timeouts. Return status
@@ -2213,9 +2562,7 @@ static int is_child_running() {
 
 static u8 run_target(char** argv, u32 timeout) {
   //todo watchdog timer to detect hangs
-
-  char command[] = "F";
-  DWORD num_read;
+  DWORD num_read, dwThreadId;
   char result = 0;
 
   if(sinkhole_stds && devnul_handle == INVALID_HANDLE_VALUE) {
@@ -2233,29 +2580,53 @@ static u8 run_target(char** argv, u32 timeout) {
     }
   }
 
+  if (custom_dll_defined) {
+    if (!dll_init_ptr())
+      PFATAL("User-defined custom initialization routine returned 0");
+  }
+
   if(!is_child_running()) {
     destroy_target_process(0);
-	create_target_process(argv);
-	fuzz_iterations_current = 0;
+    create_target_process(argv);
+    fuzz_iterations_current = 0;
   }
+
+  if (custom_dll_defined)
+    process_test_case_into_dll(fuzz_iterations_current);
 
   child_timed_out = 0;
   memset(trace_bits, 0, MAP_SIZE);
   MemoryBarrier();
-
-  WriteFile( 
-    pipe_handle,        // handle to pipe 
-    command,     // buffer to write from 
-    1, // number of bytes to write 
-    &num_read,   // number of bytes written 
-    NULL);        // not overlapped I/O 
-
-
-  watchdog_timeout_time = get_cur_time() + timeout;
+  if (fuzz_iterations_current == 0 && init_tmout != 0) {
+	  watchdog_timeout_time = get_cur_time() + init_tmout;
+  }
+  else {
+	  watchdog_timeout_time = get_cur_time() + timeout;
+  }
   watchdog_enabled = 1;
+  result = ReadCommandFromPipe(timeout);
+  if (result == 'K')
+  {
+	  //a workaround for first cycle in app persistent mode
+	  result = ReadCommandFromPipe(timeout);
+  }
+  if (result == 0) 
+  {
+	  //saves us from getting stuck in corner case.
+	  MemoryBarrier();
+	  watchdog_enabled = 0;
 
-  ReadFile(pipe_handle, &result, 1, &num_read, NULL);
+      destroy_target_process(0);
+      return FAULT_TMOUT;
+  }
+  if (result != 'P')
+  {
+	  FATAL("Unexpected result from pipe! expected 'P', instead received '%c'\n", result);
+  }
+  WriteCommandToPipe('F');
 
+  result = ReadCommandFromPipe(timeout); //no need to check for "error(0)" since we are exiting anyway
+  //ACTF("result: '%c'", result);
   MemoryBarrier();
   watchdog_enabled = 0;
 
@@ -2326,39 +2697,12 @@ static void write_to_testcase(void* mem, u32 len) {
 /* The same, but with an adjustable gap. Used for trimming. */
 
 static void write_with_gap(char* mem, u32 len, u32 skip_at, u32 skip_len) {
-
-  s32 fd = out_fd;
-  u32 tail_len = len - skip_at - skip_len;
-
-  if (out_file) {
-
-    unlink(out_file); /* Ignore errors. */
-
-    fd = open(out_file, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, 0600);
-
-    if (fd < 0) {
-      destroy_target_process(0);
-
-	  unlink(out_file); /* Ignore errors. */
-
-      fd = open(out_file, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, 0600);
-
-      if (fd < 0) PFATAL("Unable to create '%s'", out_file);
-	}
-
-  } else lseek(fd, 0, SEEK_SET);
-
-  if (skip_at) ck_write(fd, mem, skip_at, out_file);
-
-  if (tail_len) ck_write(fd, mem + skip_at + skip_len, tail_len, out_file);
-
-  if (!out_file) {
-
-    if (_chsize(fd, len - skip_len)) PFATAL("ftruncate() failed");
-    lseek(fd, 0, SEEK_SET);
-
-  } else close(fd);
-
+  
+  char* trimmed_mem = malloc(len - skip_len);
+  memcpy(trimmed_mem, mem, skip_at); //copy start
+  memcpy(trimmed_mem + skip_at, mem + skip_at + skip_len, len - (skip_at + skip_len));
+  write_to_testcase(trimmed_mem, len - skip_len);
+  free(trimmed_mem);
 }
 
 
@@ -3233,7 +3577,7 @@ static void write_stats_file(double bitmap_cvg, double stability, double eps) {
              "afl_banner        : %s\n"
              "afl_version       : " VERSION "\n"
              "command_line      : %s\n",
-             start_time / 1000, get_cur_time() / 1000, 0,
+             start_time / 1000, get_cur_time() / 1000, GetCurrentProcessId(),
              queue_cycle ? (queue_cycle - 1) : 0, total_execs, eps,
              queued_paths, queued_favored, queued_discovered, queued_imported,
              max_depth, current_entry, pending_favored, pending_not_fuzzed,
@@ -6424,6 +6768,7 @@ static void sync_fuzzers(char** argv) {
 
 	h2 = FindFirstFile(qd_path_pattern, &qd);
 	if(h2 == INVALID_HANDLE_VALUE) {
+      ck_free(qd_path_pattern);
       ck_free(qd_path);
       continue;
 	}
@@ -6608,7 +6953,9 @@ static void fix_up_banner(u8* name) {
 /* Check if we're on TTY. */
 
 static void check_if_tty(void) {
+#ifndef USE_COLOR
   not_on_tty = 1;
+#endif
 }
 
 
@@ -6631,12 +6978,15 @@ static void usage(u8* argv0) {
 
        "  -i dir        - input directory with test cases\n"
        "  -o dir        - output directory for fuzzer findings\n"
-	   "  -D dir        - directory with DynamoRIO binaries (drrun, drconfig)\n"
-	   "  -t msec       - timeout for each run\n\n"
+       "  -t msec       - timeout for each run\n\n"
+
+       "Instrumentation type:\n\n"
+        "  -D dir        - directory with DynamoRIO binaries (drrun, drconfig)\n"
+        "  -Y            - enable the static instrumentation mode\n\n"
 
        "Execution control settings:\n\n"
 
-       "  -f file       - location read by the fuzzed program (stdin)\n"
+       "  -f file       - location read by the fuzzed program (stdin)\n\n"
  
        "Fuzzing behavior settings:\n\n"
 
@@ -6645,8 +6995,10 @@ static void usage(u8* argv0) {
 
        "Other stuff:\n\n"
 
+       "  -I msec       - timeout for process initialization and first run\n"
        "  -T text       - text banner to show on the screen\n"
        "  -M \\ -S id    - distributed mode (see parallel_fuzzing.txt)\n"
+       "  -l path       - a path to user-defined DLL for custom test cases processing\n\n"
 
        "For additional tips, please consult %s\\README.\n\n",
 
@@ -6935,20 +7287,13 @@ static void get_core_count(void) {
 #endif /* ^__APPLE__ */
 
 #else
-
   /* On Linux, a simple way is to look at /proc/stat, especially since we'd
      be parsing it anyway for other reasons later on. */
 
-  FILE* f = fopen("\\proc\\stat", "r");
-  u8 tmp[1024];
+  SYSTEM_INFO sys_info = { 0 };
+  GetSystemInfo(&sys_info);
+  cpu_core_count = sys_info.dwNumberOfProcessors;
 
-  if (!f) return;
-
-  while (fgets(tmp, sizeof(tmp), f))
-    if (!strncmp(tmp, "cpu", 3) && isdigit(tmp[3])) cpu_core_count++;
-
-  fclose(f);
-  
 #endif /* ^(__APPLE__ || __FreeBSD__ || __OpenBSD__) */
 
   if (cpu_core_count) {
@@ -7251,6 +7596,29 @@ int getopt(int argc, char **argv, char *optstring) {
   }
 }
 
+/* This routine is designed to load user-defined library for custom test cases processing */
+void load_custom_library(const char *libname)
+{
+  int result = 0;
+  SAYF("Loading custom winAFL server library\n");
+  HMODULE hLib = LoadLibraryA(libname);
+  if (hLib == NULL)
+    FATAL("Unable to load custom server library, GetLastError = 0x%x", GetLastError());
+
+  /* init the custom server */
+  // Get pointer to user-defined server initialization function using GetProcAddress:
+  dll_init_ptr = (dll_init)GetProcAddress(hLib, "_dll_init@0");
+  if (dll_init_ptr == NULL)
+    FATAL("Unable to load _dll_init from the DLL provided by user");
+
+  //Get pointer to user-defined test cases sending function using GetProcAddress:
+  dll_run_ptr = (dll_run)GetProcAddress(hLib, "_dll_run@12");
+  if (dll_run_ptr == NULL)
+    FATAL("Unable to load _dll_run from the DLL provided by user");
+
+  SAYF("Sucessfully loaded and initalized\n");
+}
+
 /* Main entry point */
 int main(int argc, char** argv) {
 
@@ -7264,6 +7632,10 @@ int main(int argc, char** argv) {
 
   setup_watchdog_timer();
 
+#ifdef USE_COLOR
+  enable_ansi_console();
+#endif
+
   SAYF("WinAFL " WINAFL_VERSION " by <ifratric@google.com>\n");
   SAYF("Based on AFL " cBRI VERSION cRST " by <lcamtuf@google.com>\n");
 
@@ -7276,10 +7648,9 @@ int main(int argc, char** argv) {
   dynamorio_dir = NULL;
   client_params = NULL;
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:T:dnCB:S:M:x:QD:b:")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:t:I:T:dYnCB:S:M:x:QD:b:l:")) > 0)
 
     switch (opt) {
-
       case 'i':
 
         if (in_dir) FATAL("Multiple -i options not supported");
@@ -7359,6 +7730,16 @@ int main(int argc, char** argv) {
 
       }
 
+	  case 'I': {
+
+		  if (sscanf(optarg, "%u", &init_tmout) < 1) FATAL("Bad syntax used for -I");
+
+		  if (init_tmout < 5) FATAL("Dangerously low value of -I");
+
+		  break;
+
+	  }
+
       case 'm': {
 
           u8 suffix = 'M';
@@ -7389,9 +7770,8 @@ int main(int argc, char** argv) {
 
           if (mem_limit < 5) FATAL("Dangerously low value of -m");
 
-        }
-
-        break;
+          break;
+      }
 
       case 'd':
 
@@ -7447,13 +7827,26 @@ int main(int argc, char** argv) {
 
         break;
 
+      case 'Y':
+
+        if (dynamorio_dir) FATAL("Dynamic-instrumentation via DRIO is uncompatible with static-instrumentation");
+        drioless = 1;
+
+        break;
+
+      case 'l':
+        custom_dll_defined = 1;
+        load_custom_library(optarg);
+
+        break;
+
       default:
 
         usage(argv[0]);
 
     }
 
-  if (optind == argc || !in_dir || !out_dir || !dynamorio_dir || !timeout_given) usage(argv[0]);
+  if (!in_dir || !out_dir || !timeout_given || (!drioless && !dynamorio_dir)) usage(argv[0]);
 
   extract_client_params(argc, argv);
   optind++;
@@ -7489,6 +7882,9 @@ int main(int argc, char** argv) {
   check_if_tty();
 
   get_core_count();
+
+  bind_to_free_cpu();
+
   check_crash_handling();
   check_cpu_governor();
 

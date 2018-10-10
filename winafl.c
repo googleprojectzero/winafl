@@ -37,8 +37,21 @@
 #include "limits.h"
 #include <string.h>
 #include <stdlib.h>
+#include <windows.h>
 
 #define UNKNOWN_MODULE_ID USHRT_MAX
+
+#ifndef PF_FASTFAIL_AVAILABLE
+#define PF_FASTFAIL_AVAILABLE 23
+#endif
+
+#ifndef STATUS_FATAL_APP_EXIT
+#define STATUS_FATAL_APP_EXIT ((DWORD)0x40000015L)
+#endif
+
+#ifndef STATUS_HEAP_CORRUPTION
+#define STATUS_HEAP_CORRUPTION 0xC0000374
+#endif
 
 static uint verbose;
 
@@ -52,6 +65,9 @@ static uint verbose;
 #define COVERAGE_BB 0
 #define COVERAGE_EDGE 1
 
+//fuzz modes
+enum persistence_mode_t { native_mode = 0,	in_app = 1,};
+
 typedef struct _target_module_t {
     char module_name[MAXIMUM_PATH];
     struct _target_module_t *next;
@@ -63,6 +79,7 @@ typedef struct _winafl_option_t {
      */
     bool nudge_kills;
     bool debug_mode;
+	int persistence_mode;
     int coverage_kind;
     char logdir[MAXIMUM_PATH];
     target_module_t *target_modules;
@@ -76,6 +93,7 @@ typedef struct _winafl_option_t {
     int num_fuz_args;
     drwrap_callconv_t callconv;
     bool thread_coverage;
+    bool no_loop;
 } winafl_option_t;
 static winafl_option_t options;
 
@@ -164,6 +182,20 @@ event_soft_kill(process_id_t pid, int exit_code)
  * Event Callbacks
  */
 
+char ReadCommandFromPipe()
+{
+	DWORD num_read;
+	char result;
+	ReadFile(pipe, &result, 1, &num_read, NULL);
+	return result;
+}
+
+void WriteCommandToPipe(char cmd)
+{
+	DWORD num_written;
+	WriteFile(pipe, &cmd, 1, &num_written, NULL);
+}
+
 static void
 dump_winafl_data()
 {
@@ -172,7 +204,6 @@ dump_winafl_data()
 
 static bool
 onexception(void *drcontext, dr_exception_t *excpt) {
-    DWORD num_written;
     DWORD exception_code = excpt->record->ExceptionCode;
 
     if(options.debug_mode)
@@ -181,11 +212,15 @@ onexception(void *drcontext, dr_exception_t *excpt) {
     if((exception_code == EXCEPTION_ACCESS_VIOLATION) ||
        (exception_code == EXCEPTION_ILLEGAL_INSTRUCTION) ||
        (exception_code == EXCEPTION_PRIV_INSTRUCTION) ||
-       (exception_code == EXCEPTION_STACK_OVERFLOW)) {
+       (exception_code == EXCEPTION_INT_DIVIDE_BY_ZERO) ||
+       (exception_code == STATUS_HEAP_CORRUPTION) ||
+       (exception_code == EXCEPTION_STACK_OVERFLOW) ||
+       (exception_code == STATUS_STACK_BUFFER_OVERRUN) ||
+       (exception_code == STATUS_FATAL_APP_EXIT)) {
             if(options.debug_mode) {
                 dr_fprintf(winafl_data.log, "crashed\n");
             } else {
-                WriteFile(pipe, "C", 1, &num_written, NULL);
+				WriteCommandToPipe('C');
             }
             dr_exit_process(1);
     }
@@ -201,7 +236,7 @@ static void event_thread_init(void *drcontext)
   if(options.thread_coverage) {
     thread_data[1] = winafl_data.fake_afl_area;
   } else {
-    thread_data[0] = 0;
+    thread_data[1] = 0;
   }
   drmgr_set_tls_field(drcontext, winafl_tls_field, thread_data);
 }
@@ -398,11 +433,55 @@ instrument_edge_coverage(void *drcontext, void *tag, instrlist_t *bb, instr_t *i
 }
 
 static void
+pre_loop_start_handler(void *wrapcxt, INOUT void **user_data)
+{
+	void *drcontext = drwrap_get_drcontext(wrapcxt);
+
+	if (!options.debug_mode) {
+		//let server know we finished a cycle, redundunt on first cycle.
+		WriteCommandToPipe('K');
+
+		if (fuzz_target.iteration == options.fuzz_iterations) {
+			dr_exit_process(0);
+		}
+		fuzz_target.iteration++;
+
+		//let server know we are starting a new cycle
+		WriteCommandToPipe('P'); 
+
+		//wait for server acknowledgement for cycle start
+		char command = ReadCommandFromPipe(); 
+
+		if (command != 'F') {
+			if (command == 'Q') {
+				dr_exit_process(0);
+			}
+			else {
+				char errorMessage[] = "unrecognized command received over pipe: ";
+				errorMessage[sizeof(errorMessage)-2] = command;
+				DR_ASSERT_MSG(false, errorMessage);
+			}
+		}
+	}
+	else {
+		debug_data.pre_hanlder_called++;
+		dr_fprintf(winafl_data.log, "In pre_loop_start_handler\n");
+	}
+
+	memset(winafl_data.afl_area, 0, MAP_SIZE);
+
+	if (options.coverage_kind == COVERAGE_EDGE || options.thread_coverage) {
+		void **thread_data = (void **)drmgr_get_tls_field(drcontext, winafl_tls_field);
+		thread_data[0] = 0;
+		thread_data[1] = winafl_data.afl_area;
+	}
+}
+
+static void
 pre_fuzz_handler(void *wrapcxt, INOUT void **user_data)
 {
     char command = 0;
     int i;
-    DWORD num_read;
     void *drcontext;
 
     app_pc target_to_fuzz = drwrap_get_func(wrapcxt);
@@ -413,7 +492,8 @@ pre_fuzz_handler(void *wrapcxt, INOUT void **user_data)
     fuzz_target.func_pc = target_to_fuzz;
 
     if(!options.debug_mode) {
-        ReadFile(pipe, &command, 1, &num_read, NULL);
+		WriteCommandToPipe('P');
+		command = ReadCommandFromPipe();
 
         if(command != 'F') {
             if(command == 'Q') {
@@ -428,13 +508,13 @@ pre_fuzz_handler(void *wrapcxt, INOUT void **user_data)
     }
 
     //save or restore arguments
-    if(fuzz_target.iteration == 0) {
-        for(i = 0; i < options.num_fuz_args; i++) {
-            options.func_args[i] = drwrap_get_arg(wrapcxt, i);
-        }
-    } else {
-        for(i = 0; i < options.num_fuz_args; i++) {
-            drwrap_set_arg(wrapcxt, i, options.func_args[i]);
+    if (!options.no_loop) {
+        if (fuzz_target.iteration == 0) {
+            for (i = 0; i < options.num_fuz_args; i++)
+                options.func_args[i] = drwrap_get_arg(wrapcxt, i);
+        } else {
+            for (i = 0; i < options.num_fuz_args; i++)
+                drwrap_set_arg(wrapcxt, i, options.func_args[i]);
         }
     }
 
@@ -450,17 +530,19 @@ pre_fuzz_handler(void *wrapcxt, INOUT void **user_data)
 static void
 post_fuzz_handler(void *wrapcxt, void *user_data)
 {
-    DWORD num_written;
     dr_mcontext_t *mc;
-
     mc = drwrap_get_mcontext(wrapcxt);
 
     if(!options.debug_mode) {
-        WriteFile(pipe, "K", 1, &num_written, NULL);
+		WriteCommandToPipe('K');
     } else {
         debug_data.post_handler_called++;
         dr_fprintf(winafl_data.log, "In post_fuzz_handler\n");
     }
+
+    /* We don't need to reload context in case of network-based fuzzing. */
+    if (options.no_loop)
+        return;
 
     fuzz_target.iteration++;
     if(fuzz_target.iteration == options.fuzz_iterations) {
@@ -469,15 +551,13 @@ post_fuzz_handler(void *wrapcxt, void *user_data)
 
     mc->xsp = fuzz_target.xsp;
     mc->pc = fuzz_target.func_pc;
-
-    drwrap_redirect_execution(wrapcxt);
+	drwrap_redirect_execution(wrapcxt);
 }
 
 static void
 createfilew_interceptor(void *wrapcxt, INOUT void **user_data)
 {
     wchar_t *filenamew = (wchar_t *)drwrap_get_arg(wrapcxt, 0);
-
     if(options.debug_mode)
         dr_fprintf(winafl_data.log, "In OpenFileW, reading %ls\n", filenamew);
 }
@@ -486,11 +566,66 @@ static void
 createfilea_interceptor(void *wrapcxt, INOUT void **user_data)
 {
     char *filename = (char *)drwrap_get_arg(wrapcxt, 0);
-
     if(options.debug_mode)
         dr_fprintf(winafl_data.log, "In OpenFileA, reading %s\n", filename);
 }
 
+static void
+verfierstopmessage_interceptor_pre(void *wrapctx, INOUT void **user_data)
+{
+    EXCEPTION_RECORD exception_record = { 0 };
+    dr_exception_t dr_exception = { 0 };
+    dr_exception.record = &exception_record;
+    exception_record.ExceptionCode = STATUS_HEAP_CORRUPTION;
+
+    onexception(NULL, &dr_exception);
+}
+
+static void
+recvfrom_interceptor(void *wrapcxt, INOUT void **user_data)
+{
+    if (options.debug_mode)
+        dr_fprintf(winafl_data.log, "In recvfrom\n");
+}
+
+static void
+recv_interceptor(void *wrapcxt, INOUT void **user_data)
+{
+    if (options.debug_mode)
+        dr_fprintf(winafl_data.log, "In recv\n");
+}
+
+static void
+isprocessorfeaturepresent_interceptor_pre(void *wrapcxt, INOUT void **user_data)
+{
+    DWORD feature = (DWORD)drwrap_get_arg(wrapcxt, 0);
+    *user_data = (void*)feature;
+}
+
+static void
+isprocessorfeaturepresent_interceptor_post(void *wrapcxt, void *user_data)
+{
+    DWORD feature = (DWORD)user_data;
+    if(feature == PF_FASTFAIL_AVAILABLE) {
+        if(options.debug_mode) {
+            dr_fprintf(winafl_data.log, "About to make IsProcessorFeaturePresent(%d) returns 0\n", feature);
+        }
+
+        // Make the software thinks that _fastfail() is not supported.
+        drwrap_set_retval(wrapcxt, (void*)0);
+    }
+}
+
+static void
+unhandledexceptionfilter_interceptor_pre(void *wrapcxt, INOUT void **user_data)
+{
+    PEXCEPTION_POINTERS exception = (PEXCEPTION_POINTERS)drwrap_get_arg(wrapcxt, 0);
+    dr_exception_t dr_exception = { 0 };
+
+    // Fake an exception
+    dr_exception.record = exception->ExceptionRecord;
+    onexception(NULL, &dr_exception);
+}
 
 static void
 event_module_unload(void *drcontext, const module_data_t *info)
@@ -528,7 +663,21 @@ event_module_load(void *drcontext, const module_data_t *info, bool loaded)
                     to_wrap += (size_t)info->start;
                 }
             }
-            drwrap_wrap_ex(to_wrap, pre_fuzz_handler, post_fuzz_handler, NULL, options.callconv);
+			if (options.persistence_mode == native_mode)
+			{
+				drwrap_wrap_ex(to_wrap, pre_fuzz_handler, post_fuzz_handler, NULL, options.callconv);
+			}
+			if (options.persistence_mode == in_app)
+			{
+				drwrap_wrap_ex(to_wrap, pre_loop_start_handler, NULL, NULL, options.callconv);
+			}
+        }
+
+        if (options.debug_mode && (strcmp(module_name, "WS2_32.dll") == 0)) {
+            to_wrap = (app_pc)dr_get_proc_address(info->handle, "recvfrom");
+            bool result = drwrap_wrap(to_wrap, recvfrom_interceptor, NULL);
+            to_wrap = (app_pc)dr_get_proc_address(info->handle, "recv");
+            result = drwrap_wrap(to_wrap, recv_interceptor, NULL);
         }
 
         if(options.debug_mode && (strcmp(module_name, "KERNEL32.dll") == 0)) {
@@ -537,6 +686,29 @@ event_module_load(void *drcontext, const module_data_t *info, bool loaded)
             to_wrap = (app_pc)dr_get_proc_address(info->handle, "CreateFileA");
             drwrap_wrap(to_wrap, createfilea_interceptor, NULL);
         }
+
+        if(_stricmp(module_name, "kernelbase.dll") == 0) {
+            // Since Win8, software can use _fastfail() to trigger an exception that cannot be caught.
+            // This is a problem for winafl as it also means DR won't be able to see it. Good thing is that
+            // usually those routines (__report_gsfailure for example) accounts for platforms that don't
+            // have support for fastfail. In those cases, they craft an exception record and pass it
+            // to UnhandledExceptionFilter.
+            //
+            // To work around this we set up two hooks:
+            //   (1) IsProcessorFeaturePresent(PF_FASTFAIL_AVAILABLE): to lie and pretend that the
+            //       platform doesn't support fastfail.
+            //   (2) UnhandledExceptionFilter: to intercept the exception record and forward it
+            //       to winafl's exception handler.
+            to_wrap = (app_pc)dr_get_proc_address(info->handle, "IsProcessorFeaturePresent");
+            drwrap_wrap(to_wrap, isprocessorfeaturepresent_interceptor_pre, isprocessorfeaturepresent_interceptor_post);
+            to_wrap = (app_pc)dr_get_proc_address(info->handle, "UnhandledExceptionFilter");
+            drwrap_wrap(to_wrap, unhandledexceptionfilter_interceptor_pre, NULL);
+        }
+    }
+
+    if (_stricmp(module_name, "verifier.dll") == 0) {
+        to_wrap = (app_pc)dr_get_proc_address(info->handle, "VerifierStopMessage");
+        drwrap_wrap(to_wrap, verfierstopmessage_interceptor_pre, NULL);
     }
 
     module_table_load(module_table, info);
@@ -637,6 +809,7 @@ options_init(client_id_t id, int argc, const char *argv[])
     const char *token;
     target_module_t *target_modules;
     /* default values */
+	options.persistence_mode = native_mode;
     options.nudge_kills = true;
     options.debug_mode = false;
     options.thread_coverage = false;
@@ -646,6 +819,7 @@ options_init(client_id_t id, int argc, const char *argv[])
     options.fuzz_method[0] = 0;
     options.fuzz_offset = 0;
     options.fuzz_iterations = 1000;
+    options.no_loop = false;
     options.func_args = NULL;
     options.num_fuz_args = 0;
     options.callconv = DRWRAP_CALLCONV_DEFAULT;
@@ -731,6 +905,21 @@ options_init(client_id_t id, int argc, const char *argv[])
             else
                 NOTIFY(0, "Unknown calling convention, using default value instead.\n");
         }
+        else if (strcmp(token, "-no_loop") == 0) {
+            options.no_loop = true;
+        }
+		else if (strcmp(token, "-persistence_mode") == 0) {
+			USAGE_CHECK((i + 1) < argc, "missing mode arg: '-fuzz_mode' arg");
+			const char* mode = argv[++i];
+			if (strcmp(mode, "in_app") == 0)
+			{
+				options.persistence_mode = in_app;
+			}
+			else
+			{
+				options.persistence_mode = native_mode;
+			}
+		}
         else {
             NOTIFY(0, "UNRECOGNIZED OPTION: \"%s\"\n", token);
             USAGE_CHECK(false, "invalid option");

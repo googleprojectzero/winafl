@@ -24,6 +24,7 @@ import shutil
 import subprocess
 import sys
 import time
+import re
 from textwrap import dedent, wrap
 
 nul = open(os.devnull, 'wb')
@@ -46,29 +47,36 @@ class AFLShowMapWorker(object):
         '''Takes the argparse namespace, and convert it to the list of options used
         to invoke afl-showmap.exe'''
         r = [
-            'afl-showmap.exe', '-q', '-D', args.dynamorio_dir, '-o', trace_name
+            'afl-showmap.exe', '-o', trace_name, '-m', args.memory_limit
         ]
+
+        if os.getenv('AFL_NO_SINKHOLE') is None:
+            r.append('-q')
 
         if args.time_limit > 0:
             r.extend(['-t', '%d' % args.time_limit])
         else:
             r.extend(['-t', 'none'])
 
-        r.append('--')
-        r.extend(['-target_module', args.target_module])
-
-        if args.target_method is None:
-            r.extend(['-target_offset', '0x%x' % args.target_offset])
+        if args.static_instr:
+            r.append('-Y')
         else:
-            r.extend(['-target_method', args.target_method])
+            r.extend(['-D', args.dynamorio_dir])
+            r.append('--')
+            r.extend(['-target_module', args.target_module])
 
-        r.extend(['-nargs', '%d' % args.nargs])
-        r.extend(['-covtype', args.covtype])
-        if args.call_convention is not None:
-            r.extend(['-call_convention', args.call_convention])
+            if args.target_method is None:
+                r.extend(['-target_offset', '0x%x' % args.target_offset])
+            else:
+                r.extend(['-target_method', args.target_method])
 
-        for mod in args.coverage_modules:
-            r.extend(['-coverage_module', mod])
+            r.extend(['-nargs', '%d' % args.nargs])
+            r.extend(['-covtype', args.covtype])
+            if args.call_convention is not None:
+                r.extend(['-call_convention', args.call_convention])
+
+            for mod in args.coverage_modules:
+                r.extend(['-coverage_module', mod])
 
         if args.edges_only:
             r.append('-e')
@@ -138,6 +146,13 @@ def target_offset(opt):
     except:
         raise argparse.ArgumentTypeError('must be an integer')
 
+def memory_limit(opt):
+    '''Validates that the -m parameter is properly formated, else
+    raises an ArgumentTypeError exception back to the argparse parser.'''
+    if re.match('^\d+[TGkM]{0,1}$', opt) or opt == 'none':
+        return opt
+    raise argparse.ArgumentTypeError('must be an integer followed by either: '
+                                     'T, G, M, k or nothing; or none')
 
 def setup_argparse():
     '''Sets up the argparse configuration.'''
@@ -157,6 +172,9 @@ def setup_argparse():
 
              * Read from specific file with pattern
               winafl-cmin.py -D D:\\DRIO\\bin32 -t 100000 -i in -o minset -f prefix-@@-foo.ext -covtype edge -coverage_module m.dll -target_module test.exe -target_method fuzz -nargs 2 -- test.exe @@
+
+             * Typical use with static instrumentation
+              winafl-cmin.py -Y -t 100000 -i in -o minset -- test.instr.exe @@
             '''
         ), 100, replace_whitespace = False))
     )
@@ -164,8 +182,8 @@ def setup_argparse():
     group = parser.add_argument_group('basic parameters')
     group.add_argument(
         '-i', '--input', action = 'append', required = True,
-        metavar = 'dir', help = 'input directory with the starting corpus.' \
-        'Multiples input directories are supported'
+        metavar = 'dir', help = 'input directory with the starting corpus.'
+        ' Multiple input directories are supported'
     )
     group.add_argument(
         '-o', '--output', required = True,
@@ -177,7 +195,7 @@ def setup_argparse():
     )
     group.add_argument(
         '--working-dir', default = os.getcwd(),
-        metavar = 'dir', help = 'directory containing afl-showmap.exe,' \
+        metavar = 'dir', help = 'directory containing afl-showmap.exe,'
         'winafl.dll, the target binary, etc.'
     )
     group.add_argument(
@@ -186,47 +204,59 @@ def setup_argparse():
     )
 
     group = parser.add_argument_group('instrumentation settings')
+    instr_type = group.add_mutually_exclusive_group(required = True)
+    instr_type.add_argument(
+        '-Y', '--static-instr', action = 'store_true',
+        help = 'use the static instrumentation mode'
+    )
+
+    instr_type.add_argument(
+        '-D', '--dynamorio_dir',
+        metavar = 'dir', help = 'directory containing DynamoRIO binaries (drrun, drconfig)'
+    )
+
     group.add_argument(
         '-covtype', choices = ('edge', 'bb'), default = 'bb',
         help = 'the type of coverage being recorded (defaults to bb)'
     )
     group.add_argument(
         '-call_convention', choices = ('stdcall', 'fastcall', 'thiscall', 'ms64'),
-        help = 'the calling convention of the target_method'
+        default = 'stdcall', help = 'the calling convention of the target_method'
     )
     group.add_argument(
-        '-coverage_module', dest = 'coverage_modules', action = 'append', required = True,
-        metavar = 'module', help = 'module for which to record coverage. Multiple module flags are supported'
+        '-coverage_module', dest = 'coverage_modules', default = None,
+        action = 'append', metavar = 'module', help = 'module for which to record coverage.'
+        ' Multiple module flags are supported'
     )
     group.add_argument(
-        '-target_module', required = True,
-        metavar = 'module', help = 'module which contains the target function to be fuzzed'
+        '-target_module', default = None, metavar = 'module',
+        help = 'module which contains the target function to be fuzzed'
     )
     group.add_argument(
-        '-nargs', type = int, required = True,
-        metavar = 'nargs', help = 'number of arguments the fuzzed method takes. This is used to save/restore' \
-        'the arguments between runs'
-    )
-    group.add_argument(
-        '-D', '--dynamorio_dir', required = True,
-        metavar = 'dir', help = 'directory containing DynamoRIO binaries (drrun, drconfig)'
+        '-nargs', type = int, default = None, metavar = 'nargs',
+        help = 'number of arguments the fuzzed method takes. This is used to save/restore'
+        ' the arguments between runs'
     )
 
-    group = group.add_mutually_exclusive_group(required = True)
+    group = group.add_mutually_exclusive_group()
     group.add_argument(
-        '-target_method', default = None,
-        metavar = 'method', help = 'name of the method to fuzz in persistent mode. A symbol for the' \
-        'method needs to be exported for this to work'
+        '-target_method', default = None, metavar = 'method',
+        help = 'name of the method to fuzz in persistent mode.'
+        ' A symbol for the method needs to be exported for this to work'
     )
     group.add_argument(
-        '-target_offset', type = target_offset,
-        metavar = 'rva offset', help = 'offset of the method to fuzz from the start of the module'
+        '-target_offset', default = None, type = target_offset, metavar = 'rva offset',
+        help = 'offset of the method to fuzz from the start of the module'
     )
 
     group = parser.add_argument_group('execution control settings')
     group.add_argument(
         '-t', '--time-limit', type = int, default = 0,
         metavar = 'msec', help = 'timeout for each run (none)'
+    )
+    group.add_argument(
+        '-m', '--memory-limit', default = 'none', type = memory_limit,
+        metavar = 'megs', help = 'memory limit for child process'
     )
     # Note(0vercl0k): If you use -f, which means you want the input file at
     # a specific location (and a specific name), we have to force the pool
@@ -235,7 +265,7 @@ def setup_argparse():
     # c:\dir\prefix@@suffix where @@ will be replaced with a unique identifier.
     group.add_argument(
         '-f', '--file-read', default = None,
-        metavar = 'file', help = 'location read by the fuzzed program. ' \
+        metavar = 'file', help = 'location read by the fuzzed program. '
         'Usage of @@ is encouraged to keep parallelization possible'
     )
 
@@ -252,13 +282,29 @@ def setup_argparse():
         '-w', '--workers', type = int, default = multiprocessing.cpu_count(),
         metavar = 'n', help = 'The number of worker processes (default: cpu count)'
     )
+    group.add_argument(
+        '--skip-dry-run', action = 'store_true', default = False,
+        help = 'Skip the dry-run step even if it failed'
+    )
     parser.add_argument(
         'target_cmdline', nargs = argparse.REMAINDER,
         help = 'target command line'
     )
     return parser.parse_args()
 
-
+def do_unique_copy(filepath, dest_path):
+    filename = os.path.basename(filepath)
+    new_dest = os.path.join(dest_path, filename)
+    
+    id = 0
+    # Avoid duplicated filename in the destination folder
+    while os.path.exists(new_dest):
+        new_dest = os.path.join(dest_path, filename+"_"+str(id))
+        id += 1
+        
+    # Now we can copy the file to destination
+    shutil.copy(filepath, new_dest)
+    
 def main(argc, argv):
     print 'corpus minimization tool for WinAFL by <0vercl0k@tuxfamily.org>'
     print 'Based on WinAFL by <ifratric@google.com>'
@@ -281,6 +327,22 @@ def main(argc, argv):
     if args.target_cmdline[0] == '--':
         del args.target_cmdline[0]
 
+    # If we are not seeing the '@@' marker somewhere and that we are not
+    # specifying an input file with -f, then it means something is wrong
+    if args.file_read is None and '@@' not in args.target_cmdline:
+        logging.error(
+            '[!] The target command line needs to include the "@@" marker to'
+            ' specify the input file.'
+        )
+        return 1
+
+    # Another sanity check on the root of output directory
+    if os.path.isdir(os.path.split(args.output)[0]) is False:
+        logging.error(
+            '[!] The output directory %r is not a directory', args.output
+        )
+        return 1
+        
     if os.path.isdir(args.working_dir) is False:
         logging.error(
             '[!] The working directory %r is not a directory', args.working_dir
@@ -289,14 +351,41 @@ def main(argc, argv):
 
     os.chdir(args.working_dir)
     logging.info('[+] CWD changed to %s.', args.working_dir)
+    if args.static_instr is True:
+        logging.info('[+] Dynamorio-less mode is enabled.')
+    else:
+        # Make sure we have all the arguments we need
+        if len(args.coverage_modules) == 0:
+            logging.error(
+                '[!] -coverage_module is a required option to use'
+                'the dynamic instrumentation'
+            )
+            return 1
 
-    # Make sure winafl.dll and afl-showmap.exe are present in the CWD
-    if os.path.isfile('afl-showmap.exe') is False or \
-       os.path.isfile('winafl.dll') is False:
-        logging.error(
-            '[!] Both afl-showmap.exe and winafl.dll need to be in %s.',
-            args.working_dir
-        )
+        if None in [args.target_module, args.nargs]:
+            logging.error(
+                '[!] , -target_module and -nargs are required'
+                ' options to use the dynamic instrumentation mode.'
+            )
+            return 1
+
+        if args.target_method is None and args.target_offset is None:
+            logging.error(
+                '[!] -target_method or -target_offset is required to use the'
+                ' dynamic instrumentation mode'
+            )
+            return 1
+
+        # If we are using DRIO, one of the thing we need is the DRIO client
+        if os.path.isfile('winafl.dll') is False:
+            logging.error(
+                '[!] winafl.dll needs to be in %s.', args.working_dir
+            )
+            return 1
+
+    # Regardless of DRIO being used or not, we need afl-showmap.exe
+    if os.path.isfile('afl-showmap.exe') is False:
+        logging.error('[!] afl-showmap.exe need to be in %s.', args.working_dir)
         return 1
 
     # Make sure the output directory doesn't exist yet
@@ -333,7 +422,9 @@ def main(argc, argv):
             '  Return codes matching? %r',
             results[0].returncode == results[1].returncode
         )
-        return 1
+
+        if not args.skip_dry_run:
+            return 1
 
     logging.info('[+] OK, %d tuples recorded.', len(results[0].tuples))
 
@@ -572,7 +663,7 @@ def main(argc, argv):
         )
         os.mkdir(args.output)
         for file_path in minset:
-            shutil.copy(file_path, args.output)
+            do_unique_copy(file_path, args.output)
 
     logging.info('[+] Time elapsed: %d seconds', time.time() - t0)
     return 0
