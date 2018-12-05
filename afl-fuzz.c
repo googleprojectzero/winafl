@@ -39,7 +39,7 @@
 #include <direct.h>
 
 #define VERSION "2.43b"
-#define WINAFL_VERSION "1.14"
+#define WINAFL_VERSION "1.15"
 
 #include "config.h"
 #include "types.h"
@@ -112,6 +112,7 @@ static u8  skip_deterministic,        /* Skip deterministic stages?       */
            persistent_mode,           /* Running in persistent mode?      */
            drioless = 0;              /* Running without DRIO?            */
            custom_dll_defined = 0;    /* Custom DLL path defined ?        */
+           persist_dr_cache = 0;    /* Custom DLL path defined ?        */
 
 static s32 out_fd,                    /* Persistent fd for out_file       */
            dev_urandom_fd = -1,       /* Persistent fd for /dev/urandom   */
@@ -2292,9 +2293,15 @@ static void create_target_process(char** argv) {
     ck_free(static_config);
   } else {
     pidfile = alloc_printf("childpid_%s.txt", fuzzer_id);
-    cmd = alloc_printf(
-        "%s\\drrun.exe -pidfile %s -no_follow_children -c winafl.dll %s -fuzzer_id %s -- %s",
-        dynamorio_dir, pidfile, client_params, fuzzer_id, target_cmd);
+	if (persist_dr_cache) {
+		cmd = alloc_printf(
+			"%s\\drrun.exe -pidfile %s -no_follow_children -persist -persist_dir \"%s\\drcache\" -c winafl.dll %s -fuzzer_id %s -drpersist -- %s",
+			dynamorio_dir, pidfile, out_dir, client_params, fuzzer_id, target_cmd);
+	} else {
+		cmd = alloc_printf(
+			"%s\\drrun.exe -pidfile %s -no_follow_children -c winafl.dll %s -fuzzer_id %s -- %s",
+			dynamorio_dir, pidfile, client_params, fuzzer_id, target_cmd);
+	}
   }
   if(mem_limit || cpu_aff) {
     hJob = CreateJobObject(NULL, NULL);
@@ -3674,6 +3681,41 @@ static u8 delete_files(u8* path, u8* prefix) {
 }
 
 
+static u8 delete_subdirectories(u8* path) {
+	char *pattern;
+	WIN32_FIND_DATA fd;
+	HANDLE h;
+
+	if (_access(path, 0)) return 0;
+
+	pattern = alloc_printf("%s\\*", path);
+
+	h = FindFirstFile(pattern, &fd);
+	if (h == INVALID_HANDLE_VALUE) {
+		ck_free(pattern);
+		return !!_rmdir(path);
+	}
+
+	do {
+		if (fd.cFileName[0] != '.') {
+
+			u8* fname = alloc_printf("%s\\%s", path, fd.cFileName);
+			if (delete_files(fname, NULL)) PFATAL("Unable to delete '%s'", fname);
+			ck_free(fname);
+
+		}
+
+	} while (FindNextFile(h, &fd));
+
+	FindClose(h);
+
+	ck_free(pattern);
+
+	return !!_rmdir(path);
+
+}
+
+
 /* Get the number of runnable processes, with some simple smoothing. */
 
 static double get_runnable_processes(void) {
@@ -3968,6 +4010,10 @@ static void maybe_delete_out_dir(void) {
 
   fn = alloc_printf("%s\\plot_data", out_dir);
   if (unlink(fn) && errno != ENOENT) goto dir_cleanup_failed;
+  ck_free(fn);
+
+  fn = alloc_printf("%s\\drcache", out_dir);
+  if(delete_subdirectories(fn)) goto dir_cleanup_failed;
   ck_free(fn);
 
   OKF("Output dir cleanup successful.");
@@ -7119,6 +7165,10 @@ static void setup_dirs_fds(void) {
                      "unique_hangs, max_depth, execs_per_sec\n");
                      /* ignore errors */
 
+  tmp = alloc_printf("%s\\drcache", out_dir);
+  if (mkdir(tmp)) PFATAL("Unable to create '%s'", tmp);
+  ck_free(tmp);
+
 }
 
 
@@ -7648,7 +7698,7 @@ int main(int argc, char** argv) {
   dynamorio_dir = NULL;
   client_params = NULL;
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:I:T:dYnCB:S:M:x:QD:b:l:")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:t:I:T:dYnCB:S:M:x:QD:b:l:p")) > 0)
 
     switch (opt) {
       case 'i':
@@ -7839,6 +7889,11 @@ int main(int argc, char** argv) {
         load_custom_library(optarg);
 
         break;
+
+	  case 'p':
+		  persist_dr_cache = 1;
+
+		  break;
 
       default:
 

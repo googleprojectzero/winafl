@@ -3,6 +3,19 @@ ChangeLog
 =========
 
 ----------------------------------
+Version 1.15 (based on afl 2.43b):
+----------------------------------
+
+  - Added -p flag which persists DynamoRIO cache across process restarts.
+    This might have a slight positive impact on performance in some scenarios,
+    such as where WinAFL persistece can't be used effectively, or
+    with very complex targets.
+
+  - Fix custom_net_fuzzer to avoid consuming system resources by
+    unclosed sockets.
+    Contributed by MostafaSoliman
+
+----------------------------------
 Version 1.14 (based on afl 2.43b):
 ----------------------------------
   

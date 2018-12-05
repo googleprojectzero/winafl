@@ -126,6 +126,7 @@ The following afl-fuzz options are supported:
   -i dir        - input directory with test cases
   -o dir        - output directory for fuzzer findings
   -D dir        - directory containing DynamoRIO binaries (drrun, drconfig)
+  -p            - persist DynamoRIO cache across target process restarts
   -t msec       - timeout for each run
   -I msec       - timeout for process initialization and first run
   -f file       - location read by the fuzzed program
