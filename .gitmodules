@@ -1,0 +1,6 @@
+[submodule "third_party/winipt"]
+	path = third_party/winipt
+	url = https://github.com/ifratric/winipt
+[submodule "third_party/processor-trace"]
+	path = third_party/processor-trace
+	url = https://github.com/01org/processor-trace
