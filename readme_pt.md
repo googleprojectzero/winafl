@@ -16,13 +16,13 @@ Before every iteration, Intel PT tracing is enabled for the target process, the 
 
 To build WinAFL with Intel PT support add -DINTELPT=1 to the build options.
 
-To use the Intel PT mode set the -P flag (without any arguments) instead of -D flag (for DynamoRIO) when calling afl-fuzz.exe. Intel PT mode understands the same instrumentation flags as the DynamoRIO mode.
+To use the Intel PT mode set the -P flag (without any arguments) instead of -D flag (for DynamoRIO) when calling afl-fuzz.exe. Intel PT tracing mode understands the same instrumentation flags as the DynamoRIO mode.
 
 ## Caveats
 
 Intel PT support is pretty basic at this time and there is a number of known weaknesses:
 
- - A relatively recent Intel CPU with the Processor Tracing feature is needed for this mode and Windows 10 v1809 is needed to be able to interact with it.
+ - A relatively recent Intel CPU with the Processor Tracing feature is needed for this mode and Windows 10 v1809 is needed to be able to interact with it. Running WinAFL inside a VM won't work unless the VM software explicitly supports Intel PT.
 
  - Currently, WinAFL only partially decodes the trace, which results in a very coarse coverage information. Currently, only TIP packets are decoded, which capture information about the indirect jumps and calls and (sometimes) returns but don't capture information about e.g. conditional jumps. This is similar to how Intel PT works is used in [Honggfuzz](https://github.com/google/honggfuzz)
 
@@ -36,4 +36,10 @@ Intel PT support is pretty basic at this time and there is a number of known wea
 
  - There is a known issue where obtaining target method offset from name using symbols doesn't work for 32-bit targets. The reason for this is currently unknown. Exported names should still work though.
 
+## Examples
 
+Example command line:
+
+```
+afl-fuzz.exe -i testin -o testout -P -t 20000 -- -coverage_module test.exe -fuzz_iterations 2000 -target_module test.exe -target_method main -nargs 2 -- test.exe @@
+```
