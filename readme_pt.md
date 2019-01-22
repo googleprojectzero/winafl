@@ -1,6 +1,6 @@
 # WinAFL Intel PT mode
 
-WinAFL has an Intel PT mode which, at this time, is quite basic and quite experimental
+WinAFL has an Intel PT mode which, at this time, is very basic and very experimental
 
 ## How it works
 
@@ -8,9 +8,7 @@ Intel PT (Processor Tracing) is a feature on modern Intel CPUs that allows traci
 
 Windows from Windows 10 v1809 include an Intel PT driver. Although this is, at this time, undocumented and there is no official API, Alex Ionescu wrote the [WinIPT library](https://github.com/ionescu007/winipt) for interacting with the driver. This is what WinAFL uses for trace collection.
 
-When a target is fuzzed with WinAFL in Intel PT mode, WinAFL opens a target in a debugger. The debugger implenents the WinAFL persistence (looping over target function without the need to restart the process for every iteration), monitors for crashes, loaded modules etc.
-
-Before every iteration, Intel PT tracing is enabled for the target process, the trace is stored during the execution, and, after the iteration finishes, the collected trace is analyzed.
+When a target is fuzzed with WinAFL in Intel PT mode, WinAFL opens a target in a debugger. The debugger implenents the WinAFL persistence (looping over target function without the need to restart the process for every iteration), monitors for crashes, loaded modules etc. Before every iteration, the debugger enables Intel PT tracing for the target process, the trace is stored during the execution, and, after the iteration finishes, the collected trace is analyzed and AFL coverage map is updated.
 
 ## Building and using
 
