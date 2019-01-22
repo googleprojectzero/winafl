@@ -45,7 +45,8 @@ int main(int argc, char** argv)
 	ULONG_PTR gdiplusToken;
 	GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
 
-	Image *image = NULL, *thumbnail=NULL;
+	Image *image = NULL;
+	//*thumbnail=NULL;
 
 	image = new Image(charToWChar(argv[1]));
 	if(image && (Ok == image->GetLastStatus())) {
@@ -59,7 +60,7 @@ int main(int argc, char** argv)
 	//printf("Done\n");
 
 	if(image) delete image;
-	if(thumbnail) delete thumbnail;
+	//if(thumbnail) delete thumbnail;
 
 	GdiplusShutdown(gdiplusToken);
 
