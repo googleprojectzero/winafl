@@ -22,7 +22,7 @@ Intel PT support is pretty basic at this time and there is a number of known wea
 
  - A relatively recent Intel CPU with the Processor Tracing feature is needed for this mode and Windows 10 v1809 is needed to be able to interact with it. Running WinAFL inside a VM won't work unless the VM software explicitly supports Intel PT.
 
- - Currently, WinAFL only partially decodes the trace, which results in a very coarse coverage information. Currently, only TIP packets are decoded, which capture information about the indirect jumps and calls and (sometimes) returns but don't capture information about e.g. conditional jumps. This is similar to how Intel PT works is used in [Honggfuzz](https://github.com/google/honggfuzz)
+ - Currently, WinAFL only partially decodes the trace, which results in a very coarse coverage information. Currently, only TIP packets are decoded, which capture information about the indirect jumps and calls and (sometimes) returns but don't capture information about e.g. conditional jumps. This is similar to how Intel PT is used in [Honggfuzz](https://github.com/google/honggfuzz)
 
  - Intel PT trace is written in a ring buffer by the CPU and WinAFL needs to read out this trace. If the trace is generated quicker than WinAFL can read it out, the ring buffer will wrap around and this will result in a corrupted trace. WinAFL attempts to resolve this by using a pretty large ring buffer size (see the TRACE_BUFFER_SIZE_STR flag), but there are still no guarantees if, e.g. the thread reading out the trace becomes unexpectedly slow for some reason.
 
