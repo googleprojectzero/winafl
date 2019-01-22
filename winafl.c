@@ -29,7 +29,11 @@
 #include "drx.h"
 #include "drreg.h"
 #include "drwrap.h"
+
+#ifdef USE_DRSYMS
 #include "drsyms.h"
+#endif
+
 #include "modules.h"
 #include "utils.h"
 #include "hashtable.h"
@@ -668,9 +672,11 @@ event_module_load(void *drcontext, const module_data_t *info, bool loaded)
                 to_wrap = (app_pc)dr_get_proc_address(info->handle, options.fuzz_method);
                 if(!to_wrap) {
                     //if that fails, try with the symbol access library
+#ifdef USE_DRSYMS
                     drsym_init(0);
                     drsym_lookup_symbol(info->full_path, options.fuzz_method, (size_t *)(&to_wrap), 0);
                     drsym_exit();
+#endif
                     DR_ASSERT_MSG(to_wrap, "Can't find specified method in fuzz_module");                
                     to_wrap += (size_t)info->start;
                 }

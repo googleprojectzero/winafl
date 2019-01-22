@@ -100,8 +100,19 @@ cmake -G"Visual Studio 15 2017 Win64" .. -DDynamoRIO_DIR=..\path\to\DynamoRIO\cm
 cmake --build . --config Release
 ```
 
-For color support (Windows 10 Anniversary edition or higher), add
-`-DUSE_COLOR=1` to the cmake configuration line.
+### Build configuration options
+
+The following cmake configuration options are supported:
+
+ - `-DDynamoRIO_DIR=..\path\to\DynamoRIO\cmake` - Needed to build the
+   winafl.dll DynamoRIO module 
+
+ - `-DUSE_COLOR=1` - color support (Windows 10 Anniversary edition or higher)
+
+ - `-DUSE_DRSYSMS=1` - Drsyms support (use symbols when available to obtain
+   -target_offset from -target_method). Enabling this has been known to cause
+   issues on Windows 10 v1809, though there are workarounds,
+   see https://github.com/googleprojectzero/winafl/issues/145
 
 ## Using WinAFL
 

@@ -4,6 +4,10 @@ if (${USE_COLOR})
     add_definitions(-DUSE_COLOR)
 endif()
 
+if (${USE_DRSYMS})
+    add_definitions(-DUSE_DRSYMS)
+endif()
+
 project(test)
 
 add_executable(test
@@ -58,38 +62,43 @@ add_executable(afl-tmin
   afl-tmin.c
   )
 
+if (NOT "${DynamoRIO_DIR}" STREQUAL "")
 
-project(WinAFL)
+  project(WinAFL)
 
-set(DynamoRIO_LOG_COMPATIBILITY on)
+  set(DynamoRIO_LOG_COMPATIBILITY on)
 
-find_package(DynamoRIO)
-if (NOT DynamoRIO_FOUND)
-  message(FATAL_ERROR "DynamoRIO package required to build")
-endif(NOT DynamoRIO_FOUND)
+  find_package(DynamoRIO)
+  if (NOT DynamoRIO_FOUND)
+    message(FATAL_ERROR "DynamoRIO package required to build")
+  endif(NOT DynamoRIO_FOUND)
 
-if (STATIC_LIBRARY)
-  set(libtype STATIC)
-else()
-  set(libtype SHARED)
-endif ()
+  if (STATIC_LIBRARY)
+    set(libtype STATIC)
+  else()
+    set(libtype SHARED)
+  endif ()
 
-add_library(winafl ${libtype}
-  winafl.c
-  modules.c
-  )
-configure_DynamoRIO_client(winafl)
-use_DynamoRIO_extension(winafl drmgr)
-use_DynamoRIO_extension(winafl drx)
-use_DynamoRIO_extension(winafl drcontainers)
-use_DynamoRIO_extension(winafl drreg)
-use_DynamoRIO_extension(winafl drwrap)
-use_DynamoRIO_extension(winafl drsyms)
+  add_library(winafl ${libtype}
+    winafl.c
+    modules.c
+    )
+  configure_DynamoRIO_client(winafl)
+  use_DynamoRIO_extension(winafl drmgr)
+  use_DynamoRIO_extension(winafl drx)
+  use_DynamoRIO_extension(winafl drcontainers)
+  use_DynamoRIO_extension(winafl drreg)
+  use_DynamoRIO_extension(winafl drwrap)
+  if (${USE_DRSYMS})
+    use_DynamoRIO_extension(winafl drsyms)
+  endif()
 
-# VS2015 Fix
-if (NOT (MSVC_VERSION LESS 1900))
-  target_link_libraries(winafl "libucrt.lib")
-  target_link_libraries(winafl "libvcruntime.lib")
+  # VS2015 Fix
+  if (NOT (MSVC_VERSION LESS 1900))
+    target_link_libraries(winafl "libucrt.lib")
+    target_link_libraries(winafl "libvcruntime.lib")
+  endif()
+
 endif()
 
 add_library(custom_winafl_server SHARED custom_winafl_server.c)
