@@ -83,7 +83,7 @@ static u32 exec_tmout = EXEC_TIMEOUT; /* Configurable exec timeout (ms)   */
 static u32 init_tmout = 0;            /* Configurable init timeout (ms)   */
 static u32 hang_tmout = EXEC_TIMEOUT; /* Timeout used for hang det (ms)   */
 
-static u64 mem_limit  = MEM_LIMIT;    /* Memory cap for child (MB)        */
+u64 mem_limit  = MEM_LIMIT;           /* Memory cap for child (MB)        */
 
 static u32 stats_update_freq = 1;     /* Stats update frequency (execs)   */
 
@@ -110,9 +110,10 @@ static u8  skip_deterministic,        /* Skip deterministic stages?       */
            skip_requested,            /* Skip request, via SIGUSR1        */
            run_over10m,               /* Run time over 10 minutes?        */
            persistent_mode,           /* Running in persistent mode?      */
-           drioless = 0;              /* Running without DRIO?            */
+	       drioless = 0;              /* Running without DRIO?            */
+           use_intelpt = 0;           /* Running without DRIO?            */
            custom_dll_defined = 0;    /* Custom DLL path defined ?        */
-           persist_dr_cache = 0;    /* Custom DLL path defined ?        */
+           persist_dr_cache = 0;      /* Custom DLL path defined ?        */
 
 static s32 out_fd,                    /* Persistent fd for out_file       */
            dev_urandom_fd = -1,       /* Persistent fd for /dev/urandom   */
@@ -132,7 +133,7 @@ CRITICAL_SECTION critical_section;
 u64 watchdog_timeout_time;
 int watchdog_enabled;
 
-static u8* trace_bits;                /* SHM with instrumentation bitmap  */
+u8* trace_bits;                       /* SHM with instrumentation bitmap  */
 
 static u8  virgin_bits[MAP_SIZE],     /* Regions yet untouched by fuzzing */
            virgin_tmout[MAP_SIZE],    /* Bits we haven't seen in tmouts   */
@@ -147,7 +148,7 @@ static OVERLAPPED pipe_overlapped;    /* Overlapped structure of pipe     */
 static char   *fuzzer_id = NULL;      /* The fuzzer ID or a randomized 
                                          seed allowing multiple instances */
 static HANDLE devnul_handle;          /* Handle of the nul device         */
-static u8     sinkhole_stds = 1;      /* Sink-hole stdout/stderr messages?*/
+u8     sinkhole_stds = 1;             /* Sink-hole stdout/stderr messages?*/
 
 static volatile u8 stop_soon,         /* Ctrl-C pressed?                  */
                    clear_screen = 1,  /* Window resized?                  */
@@ -220,7 +221,7 @@ static u64 total_bitmap_size,         /* Total bit count for all bitmaps  */
 
 static u32 cpu_core_count;            /* CPU core count                   */
 
-static u64 cpu_aff = 0;       	      /* Selected CPU core                */
+u64 cpu_aff = 0;       	              /* Selected CPU core                */
 
 static FILE* plot_file;               /* Gnuplot output file              */
 
@@ -326,7 +327,7 @@ enum {
 
 /* Get unix time in milliseconds */
 
-static u64 get_cur_time(void) {
+u64 get_cur_time(void) {
 
   u64 ret;
   FILETIME filetime;
@@ -1385,11 +1386,6 @@ static void setup_shm(void) {
   unsigned int seeds[2];
   u64 name_seed;
   u8 attempts = 0;
-
-  if (!in_bitmap) memset(virgin_bits, 255, MAP_SIZE);
-
-  memset(virgin_tmout, 255, MAP_SIZE);
-  memset(virgin_crash, 255, MAP_SIZE);
 
   while(attempts < 5) {
     if(fuzzer_id == NULL) {
@@ -2568,6 +2564,14 @@ static int process_test_case_into_dll(int fuzz_iterations)
    information. The called program will update trace_bits[]. */
 
 static u8 run_target(char** argv, u32 timeout) {
+	total_execs++;
+
+#ifdef INTELPT
+	if (use_intelpt) {
+		return run_target_pt(argv, timeout);
+	}
+#endif
+
   //todo watchdog timer to detect hangs
   DWORD num_read, dwThreadId;
   char result = 0;
@@ -2643,7 +2647,6 @@ static u8 run_target(char** argv, u32 timeout) {
   classify_counts((u32*)trace_bits);
 #endif /* ^__x86_64__ */
 
-  total_execs++;
   fuzz_iterations_current++;
 
   if(fuzz_iterations_current == fuzz_iterations_max) {
@@ -7698,7 +7701,7 @@ int main(int argc, char** argv) {
   dynamorio_dir = NULL;
   client_params = NULL;
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:I:T:dYnCB:S:M:x:QD:b:l:p")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:t:I:T:dYnCB:S:M:x:QD:b:l:pP")) > 0)
 
     switch (opt) {
       case 'i':
@@ -7895,15 +7898,32 @@ int main(int argc, char** argv) {
 
 		  break;
 
+	  case 'P':
+#ifdef INTELPT
+		  use_intelpt = 1;
+#else
+		  FATAL("afl-fuzz was not compiled with Intel PT support");
+#endif
+
+		  break;
+
       default:
 
         usage(argv[0]);
 
     }
 
-  if (!in_dir || !out_dir || !timeout_given || (!drioless && !dynamorio_dir)) usage(argv[0]);
+  if (!in_dir || !out_dir || !timeout_given || (!drioless && !dynamorio_dir && !use_intelpt)) usage(argv[0]);
 
-  extract_client_params(argc, argv);
+  if (use_intelpt) {
+#ifdef INTELPT
+	  int pt_options = pt_init(argc - optind, argv + optind);
+	  if (!pt_options) usage(argv[0]);
+	  optind += pt_options;
+#endif
+  } else {
+	  extract_client_params(argc, argv);
+  }
   optind++;
 
   setup_signal_handlers();
@@ -7944,7 +7964,16 @@ int main(int argc, char** argv) {
   check_cpu_governor();
 
   setup_post();
-  setup_shm();
+
+  if (!in_bitmap) memset(virgin_bits, 255, MAP_SIZE);
+  memset(virgin_tmout, 255, MAP_SIZE);
+  memset(virgin_crash, 255, MAP_SIZE);
+
+  if (use_intelpt) {
+	  trace_bits = VirtualAlloc(0, MAP_SIZE, MEM_COMMIT, PAGE_READWRITE);
+  } else {
+	  setup_shm();
+  }
   init_count_class16();
   child_handle = NULL;
   pipe_handle = NULL;

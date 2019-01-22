@@ -8,6 +8,14 @@ if (${USE_DRSYMS})
     add_definitions(-DUSE_DRSYMS)
 endif()
 
+if (${INTELPT})
+    add_definitions(-DINTELPT)
+endif()
+
+add_subdirectory(third_party/processor-trace)
+
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
 project(test)
 
 add_executable(test
@@ -50,17 +58,81 @@ add_executable(afl-showmap
   afl-showmap.c
   )
 
-project(afl-fuzz)
-
-add_executable(afl-fuzz
-  afl-fuzz.c
-  )
-
 project(afl-tmin)
 
 add_executable(afl-tmin
   afl-tmin.c
   )
+
+add_library(custom_winafl_server SHARED custom_winafl_server.c)
+
+add_library(custom_net_fuzzer SHARED custom_net_fuzzer.c)
+
+if (${INTELPT})
+
+  project(winipt)
+
+  include_directories(third_party/winipt/inc)
+
+  ADD_LIBRARY(winipt STATIC
+    ipttool.c
+    third_party/winipt/libipt/win32.c
+    )
+
+  target_compile_definitions(winipt PRIVATE UNICODE _UNICODE)
+
+  project(winaflpt-debug)
+
+  include_directories(third_party/winipt/inc)
+  include_directories(third_party/processor-trace/libipt/internal/include)
+  include_directories(${CMAKE_CURRENT_BINARY_DIR}/third_party/processor-trace/libipt/include)
+
+  SET(PT_ADDITIONAL_SOURCES
+    winaflpt.c
+    third_party/processor-trace/libipt/src/pt_cpu.c
+    third_party/processor-trace/libipt/src/windows/pt_cpuid.c
+    )
+
+  ADD_EXECUTABLE(winaflpt-debug
+    winaflpt-debug.c
+    ${PT_ADDITIONAL_SOURCES}
+    )
+
+  target_link_libraries(winaflpt-debug winipt)
+  target_link_libraries(winaflpt-debug libipt)
+
+  target_link_libraries(winaflpt-debug "psapi.lib")
+  target_link_libraries(winaflpt-debug "Dbghelp.lib")
+
+endif()
+
+project(afl-fuzz)
+
+SET(AFL_FUZZ_SOURCES afl-fuzz.c)
+
+if (${INTELPT})
+
+  include_directories(third_party/winipt/inc)
+  include_directories(third_party/processor-trace/libipt/internal/include)
+  include_directories(${CMAKE_CURRENT_BINARY_DIR}/third_party/processor-trace/libipt/include)
+
+  SET(AFL_FUZZ_SOURCES ${AFL_FUZZ_SOURCES} ${PT_ADDITIONAL_SOURCES})
+
+endif()
+
+add_executable(afl-fuzz
+  ${AFL_FUZZ_SOURCES}
+  )
+
+if (${INTELPT})
+
+  target_link_libraries(afl-fuzz winipt)
+  target_link_libraries(afl-fuzz libipt)
+
+  target_link_libraries(afl-fuzz "psapi.lib")
+  target_link_libraries(afl-fuzz "Dbghelp.lib")
+
+endif()
 
 if (NOT "${DynamoRIO_DIR}" STREQUAL "")
 
@@ -100,7 +172,3 @@ if (NOT "${DynamoRIO_DIR}" STREQUAL "")
   endif()
 
 endif()
-
-add_library(custom_winafl_server SHARED custom_winafl_server.c)
-
-add_library(custom_net_fuzzer SHARED custom_net_fuzzer.c)
