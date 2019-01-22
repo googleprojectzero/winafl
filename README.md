@@ -114,6 +114,10 @@ The following cmake configuration options are supported:
    issues on Windows 10 v1809, though there are workarounds,
    see https://github.com/googleprojectzero/winafl/issues/145
 
+ - `-DINTELPT=1` - Enable experimental Intel PT tracing mode. For more
+   information see
+   https://github.com/googleprojectzero/winafl/blob/master/readme_pt.md
+
 ## Using WinAFL
 
 Note: If you are using pre-built binaries you'll need to download DynamoRIO
