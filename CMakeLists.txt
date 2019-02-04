@@ -89,6 +89,7 @@ if (${INTELPT})
 
   SET(PT_ADDITIONAL_SOURCES
     winaflpt.c
+    ptdecode.c
     third_party/processor-trace/libipt/src/pt_cpu.c
     third_party/processor-trace/libipt/src/windows/pt_cpuid.c
     )

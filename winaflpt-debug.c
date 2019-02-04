@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdbool.h>
+#include <direct.h>
 #include "windows.h"
 
 #include "types.h"
@@ -123,7 +124,8 @@ char *argv_to_cmd(char** argv) {
 
 int main(int argc, char **argv)
 {
-	int target_opt_ind = pt_init(argc, argv);
+	_mkdir(".\\ptmodules");
+	int target_opt_ind = pt_init(argc, argv, ".\\ptmodules");
 	if (!target_opt_ind) {
 		printf("Usage: %s <instrumentation-options> -- <target command line>\n", argv[0]);
 		return 0;

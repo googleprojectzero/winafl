@@ -4019,6 +4019,10 @@ static void maybe_delete_out_dir(void) {
   if(delete_subdirectories(fn)) goto dir_cleanup_failed;
   ck_free(fn);
 
+  fn = alloc_printf("%s\\ptmodules", out_dir);
+  if (delete_files(fn, NULL)) goto dir_cleanup_failed;
+  ck_free(fn);
+
   OKF("Output dir cleanup successful.");
 
   /* Wow... is that all? If yes, celebrate! */
@@ -7172,6 +7176,10 @@ static void setup_dirs_fds(void) {
   if (mkdir(tmp)) PFATAL("Unable to create '%s'", tmp);
   ck_free(tmp);
 
+  tmp = alloc_printf("%s\\ptmodules", out_dir);
+  if (mkdir(tmp)) PFATAL("Unable to create '%s'", tmp);
+  ck_free(tmp);
+
 }
 
 
@@ -7917,7 +7925,9 @@ int main(int argc, char** argv) {
 
   if (use_intelpt) {
 #ifdef INTELPT
-	  int pt_options = pt_init(argc - optind, argv + optind);
+	  char *modules_dir = alloc_printf("%s\\ptmodules", out_dir);
+	  int pt_options = pt_init(argc - optind, argv + optind, modules_dir);
+	  ck_free(modules_dir);
 	  if (!pt_options) usage(argv[0]);
 	  optind += pt_options;
 #endif
