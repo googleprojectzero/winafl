@@ -8,31 +8,35 @@ Intel PT (Processor Tracing) is a feature on modern Intel CPUs that allows traci
 
 Windows from Windows 10 v1809 include an Intel PT driver. Although this is, at this time, undocumented and there is no official API, Alex Ionescu wrote the [WinIPT library](https://github.com/ionescu007/winipt) for interacting with it. This is what WinAFL uses for trace collection.
 
-When a target is fuzzed with WinAFL in Intel PT mode, WinAFL opens the target in a debugger. The debugger implenents the WinAFL persistence (looping over target function without the need to restart the process for every iteration), monitors for crashes, loaded modules etc. Before every iteration, the debugger enables Intel PT tracing for the target process, the trace is stored during the execution, and, after the iteration finishes, the collected trace is analyzed and AFL coverage map is updated.
+When a target is fuzzed with WinAFL in Intel PT mode, WinAFL opens the target in a debugger. The debugger implenents the WinAFL persistence (looping over target function without the need to restart the process for every iteration), monitors for crashes, loaded modules etc. Before every iteration, the debugger enables Intel PT tracing for the target processand, after the iteration finishes, the trace is retrived and analyzed, updating the AFL coverage map.
 
 ## Building and using
 
 To build WinAFL with Intel PT support add -DINTELPT=1 to the build options.
 
-To use the Intel PT mode set the -P flag (without any arguments) instead of -D flag (for DynamoRIO) when calling afl-fuzz.exe. Intel PT tracing mode understands the same instrumentation flags as the DynamoRIO mode.
+To use the Intel PT mode set the -P flag (without any arguments) instead of -D flag (for DynamoRIO) when calling afl-fuzz.exe. Intel PT tracing mode understands the same instrumentation flags as the DynamoRIO mode, as well as several others:
 
-## Caveats
+ - `-trace_size <size>` The size (in bytes) of trace information to collect for every iteration. See remarks below. The size *must* be a factor of two larger than 4096.
+ 
+ - `-decoder <decoder>` The decoder to use to process the trace. Supported options are `tip`, `tip_ref` and `full` (default). See remarks on each below.
 
-Intel PT support is pretty basic at this time and there is a number of known weaknesses:
+## Remarks
+
+ - Intel PT support is still consider experimental. Please report any bugs you encounter.
 
  - A relatively recent Intel CPU with the Processor Tracing feature is needed for this mode and Windows 10 v1809 is needed to be able to interact with it. Running WinAFL inside a VM won't work unless the VM software explicitly supports Intel PT.
 
- - Currently, WinAFL only partially decodes the trace, which results in a very coarse coverage information. Currently, only TIP packets are decoded, which capture information about the indirect jumps and calls and (sometimes) returns but don't capture information about e.g. conditional jumps. This is similar to how Intel PT is used in [Honggfuzz](https://github.com/google/honggfuzz)
-
- - Intel PT trace is written in a ring buffer by the CPU and WinAFL needs to read out this trace. If the trace is generated quicker than WinAFL can read it out, the ring buffer will wrap around and this will result in a corrupted trace. WinAFL attempts to resolve this by using a pretty large ring buffer size (see the TRACE_BUFFER_SIZE_STR flag), but there are still no guarantees if, e.g. the thread reading out the trace becomes unexpectedly slow for some reason.
-
- - Similarly, WinAFL can collect only limited amount of trace from the execution (see the MAX_TRACE_SIZE flag). This should be sufficient for most targets, but may not be sufficient if a single iteration runs for a long time. In this case, the trace will be truncated and everything past MAX_TRACE_SIZE will be ignored.
-
- - Currently, WinAFL ignores the -coverage_module instrumentation flags and collects coverage from all modules. In combination with decoding only some trace packets, this is not necessarily a bad thing. However, it does result in some junk coverage and detecting new coverage in cases where this would not normally be desirable.
+ - The CPU writes trace information into a ring buffer. If the space in the ring buffer is not sufficient to store the full trace of the iteration execution, the buffer will wrap around and only the last `trace_size` bytes (or a little less, depending on the synchronization packets) will be available for processing. You should set the `trace_size` flags to be able to contain the full trace for a sample that exhibits full target behavior. The default `trace_size` of 1MB should be sufficient for most targets, however reducing it might increase performance for small targets.
+ 
+ - There are several options for decoding the trace, each with its advantages and drawbacks:
+ 
+   - `full` (default) Uses Intel's reference implementation to fully decode the trace. Note that full trace decoding introduces a significant overhead. Full trace decoding requires information about the code being executed. WinAFL accomplishes this by saving the memory from all executable modules in the process once they are loaded. However, if the instruction pointer ever ends up outside of an executable module (e.g. due to target using some kind of JIT), the decoding is going to fail and the trace will be decoded only partially. Additinally, if the target modifies executable modules on the fly, the result of the decoding is going to be unpredictable.
+   
+   - `tip_ref` Uses Intel's reference decoder implementation and decodes only the packets that contain the raw IP address (emitted for e.g. indirect jumps and calls, sometimes returns) but don't decode other packets, e.g. containing info about indirect jumps. This option does not require having any information on the code being executed and is much faster than full decoding. This is similar to how Intel PT is used in [Honggfuzz](https://github.com/google/honggfuzz).
+   
+   - `tip` A faster custom implementation of the `tip_ref` decoder. It should behave the same as `tip_ref`
 
  - Currently, WinAFL will only record the trace from a thread that executes the target function. In most cases this is desirable, but not always. Currently, Intel PT driver does collect information from all threads and the debugger gets information about threads being created and threads exiting. However, when the debugger gets the EXIT_THREAD_DEBUG_EVENT, it is too late and the trace information for this thread is already lost. WinAFL could read out the trace while the thread is still running, however there would be a gap between the last time the trace was read out and the time the thread exited. This would result in a non-deterministic trace with a part of it cut off and, likely, not recording trace for very short threads. Thus, to address this problem deterministically, a better way of tracking thread exits is needed.
-
- - There is a known issue where obtaining target method offset from name using symbols doesn't work for 32-bit targets. The reason for this is currently unknown. Exported names should still work though.
 
 ## Examples
 
