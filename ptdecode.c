@@ -500,6 +500,14 @@ void analyze_trace_buffer_full(unsigned char *trace_data, size_t trace_size, u8 
 	config.begin = trace_data;
 	config.end = trace_data + trace_size;
 
+	// This is important not only for accurate coverage, but also because
+	// if we don't set it, the decoder is sometimes going to break
+	// blocks on these instructions anyway, resulting in new coverage being
+	// detected where there in fact was none.
+	// See also skip_next comment below
+	config.flags.variant.block.end_on_call = 1;
+	config.flags.variant.block.end_on_jump = 1;
+
 	decoder = pt_blk_alloc_decoder(&config);
 	if (!decoder) {
 		FATAL("Error allocating decoder\n");
