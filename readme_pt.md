@@ -19,6 +19,8 @@ To use the Intel PT mode set the -P flag (without any arguments) instead of -D f
  - `-trace_size <size>` The size (in bytes) of trace information to collect for every iteration. See remarks below. The size *must* be a factor of two larger than 4096.
  
  - `-decoder <decoder>` The decoder to use to process the trace. Supported options are `tip`, `tip_ref` and `full` (default). See remarks on each below.
+ 
+ - `-nopersistent_trace` By default, due to large performance hit associated, WinAFL will not restart tracing for each iteration. If this optimization ever causes problems, it can be turned off via this flag. Mostly here for debugging reasons.
 
 ## Remarks
 
@@ -26,7 +28,7 @@ To use the Intel PT mode set the -P flag (without any arguments) instead of -D f
 
  - A relatively recent Intel CPU with the Processor Tracing feature is needed for this mode and Windows 10 v1809 is needed to be able to interact with it. Running WinAFL inside a VM won't work unless the VM software explicitly supports Intel PT.
 
- - The CPU writes trace information into a ring buffer. If the space in the ring buffer is not sufficient to store the full trace of the iteration execution, the buffer will wrap around and only the last `trace_size` bytes (or a little less, depending on the synchronization packets) will be available for processing. You should set the `trace_size` flags to be able to contain the full trace for a sample that exhibits full target behavior. The default `trace_size` of 1MB should be sufficient for most targets, however reducing it might increase performance for small targets.
+ - The CPU writes trace information into a ring buffer. If the space in the ring buffer is not sufficient to store the full trace of the iteration execution, the buffer will wrap around and only the last `trace_size` bytes (or a little less, depending on the synchronization packets) will be available for processing. You should set the `trace_size` flags to be able to contain the full trace for a sample that exhibits full target behavior. The default `trace_size` should be sufficient for most targets, however reducing it might increase performance for small targets and you might want to increase it if you get trace buffer overflow warnings.
  
  - There are several options for decoding the trace, each with its advantages and drawbacks:
  
