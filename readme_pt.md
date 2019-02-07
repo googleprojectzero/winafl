@@ -12,7 +12,7 @@ When a target is fuzzed with WinAFL in Intel PT mode, WinAFL opens the target in
 
 ## Building and using
 
-To build WinAFL with Intel PT support add -DINTELPT=1 to the build options.
+To build WinAFL with Intel PT support add `-DINTELPT=1` to the build options.
 
 To use the Intel PT mode set the -P flag (without any arguments) instead of -D flag (for DynamoRIO) when calling afl-fuzz.exe. Intel PT tracing mode understands the same instrumentation flags as the DynamoRIO mode, as well as several others:
 
