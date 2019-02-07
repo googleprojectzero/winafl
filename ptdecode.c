@@ -580,36 +580,23 @@ void analyze_trace_buffer_full(unsigned char *trace_data, size_t trace_size, u8 
 	pt_blk_free_decoder(decoder);
 }
 
-// fast decoder that decodes only tip (and related packets)
-// and skips over the reset
-void decode_trace_tip_fast(unsigned char *data, size_t size, u8 *trace_bits, int coverage_kind) {
-  uint64_t next_ip;
+static inline int get_next_opcode(unsigned char **data_p, size_t *size_p, unsigned char *opcode_p, unsigned char *opcodesize_p) {
+	unsigned char *data = *data_p;
+	size_t size = *size_p;
 
-  unsigned char opcode;
-  unsigned char opcodesize;
-
-  previous_offset = 0;
-  previous_ip = 0;
-  current_range = &(coverage_ip_ranges[0]);
-
-  if (size < sizeof(psb)) return;
-
-  if (!findpsb(&data, &size)) return;
-
-  while(size) {
-    opcode = opc_lut[*data];
-    opcodesize = opc_size_lut[*data];
+	unsigned char opcode = opc_lut[*data];
+	unsigned char opcodesize = opc_size_lut[*data];
     
     // handle extensions
     if(opcode == PPT_EXT) {
-      if(size < 2) return;
+      if(size < 2) return 0;
 
       opcode = ext_lut[*(data+1)];
       opcodesize = ext_size_lut[*(data+1)];
 
       // second-level extension
       if(opcode == PPT_EXT) {
-        if(size < 3) return;
+        if(size < 3) return 0;
         
         // currently there is only one possibility
         if((*(data+2)) == 0x88) {
@@ -627,12 +614,71 @@ void decode_trace_tip_fast(unsigned char *data, size_t size, u8 *trace_bits, int
         opcodesize = 2;
 
         while(1) {
-          if(size < opcodesize) return;
+          if(size < opcodesize) return 0;
           if(!((*(data + (opcodesize - 1))) & 1)) break;
           opcodesize++;
         }
       }
     }
+
+	if (size < opcodesize) return 0;
+
+	*opcode_p = opcode;
+	*opcodesize_p = opcodesize;
+
+	return 1;
+}
+
+static inline uint64_t decode_ip(unsigned char *data) {
+	uint64_t next_ip;
+
+	switch ((*data) >> 5) {
+	case 0:
+		next_ip = previous_ip;
+		break;
+	case 1:
+		next_ip = (previous_ip & 0xFFFFFFFFFFFF0000ULL) | *((uint16_t *)(data + 1));
+		break;
+	case 2:
+		next_ip = (previous_ip & 0xFFFFFFFF00000000ULL) | *((uint32_t *)(data + 1));
+		break;
+	case 3:
+		next_ip = sext(*((uint32_t *)(data + 1)) | ((uint64_t)(*((uint16_t *)(data + 5))) << 32), 48);
+		break;
+	case 4:
+		next_ip = (previous_ip & 0xFFFF000000000000ULL) | *((uint32_t *)(data + 1)) | ((uint64_t)(*((uint16_t *)(data + 5))) << 32);
+		break;
+	case 6:
+		next_ip = *((uint64_t *)(data + 1));
+		break;
+	}
+	previous_ip = next_ip;
+
+	return next_ip;
+}
+
+// fast decoder that decodes only tip (and related packets)
+// and skips over the reset
+void decode_trace_tip_fast(unsigned char *data, size_t size, u8 *trace_bits, int coverage_kind) {
+  uint64_t next_ip;
+
+  unsigned char opcode;
+  unsigned char opcodesize;
+
+  previous_offset = 0;
+  previous_ip = 0;
+  current_range = &(coverage_ip_ranges[0]);
+
+  if (size < sizeof(psb)) return;
+
+  if (!findpsb(&data, &size)) {
+	  FATAL("No sync packets in trace\n");
+	  return;
+  }
+
+  while(size) {
+
+	if (!get_next_opcode(&data, &size, &opcode, &opcodesize)) return;
 
     if(opcode == ppt_invalid) {
       printf("Decoding error\n");
@@ -642,35 +688,13 @@ void decode_trace_tip_fast(unsigned char *data, size_t size, u8 *trace_bits, int
 
 	// printf("packet type: %d\n", opcode);
 
-    if(size < opcodesize) return;
-
     switch (opcode) {
     case ppt_fup:
     case ppt_tip:
     case ppt_tip_pge:
     case ppt_tip_pgd:
-      switch ((*data) >> 5) {
-      case 0:
-		next_ip = previous_ip;
-        break;
-      case 1:
-        next_ip = (previous_ip & 0xFFFFFFFFFFFF0000ULL) | *((uint16_t *)(data+1));
-        break;
-      case 2:
-        next_ip = (previous_ip & 0xFFFFFFFF00000000ULL) | *((uint32_t *)(data+1));
-        break;
-      case 3:
-        next_ip = sext(*((uint32_t *)(data+1)) | ((uint64_t)(*((uint16_t *)(data+5))) << 32), 48);
-        break;
-      case 4:
-        next_ip = (previous_ip & 0xFFFF000000000000ULL) | *((uint32_t *)(data+1)) | ((uint64_t)(*((uint16_t *)(data+5))) << 32);
-        break;
-      case 6:
-        next_ip = *((uint64_t *)(data+1));
-        break;
-      }
-	  previous_ip = next_ip;
-     break;
+	  next_ip = decode_ip(data);
+      break;
     default:
       break;
     }
@@ -683,6 +707,37 @@ void decode_trace_tip_fast(unsigned char *data, size_t size, u8 *trace_bits, int
     size -= opcodesize;
     data += opcodesize;
   }
+}
+
+int check_trace_start(unsigned char *data, size_t size, uint64_t expected_ip) {
+	unsigned char opcode;
+	unsigned char opcodesize;
+
+	previous_ip = 0;
+
+	while (size) {
+		if (!get_next_opcode(&data, &size, &opcode, &opcodesize)) return 0;
+
+		switch (opcode) {
+		case ppt_tip_pge:
+			if (decode_ip(data) == expected_ip) return 1;
+			else return 0;
+		case ppt_fup:
+		case ppt_tip:
+		case ppt_tnt_8:
+		case ppt_tnt_64:
+		case ppt_tip_pgd:
+		case ppt_invalid:
+			return 0;
+		default:
+			break;
+		}
+
+		size -= opcodesize;
+		data += opcodesize;
+	}
+
+	return 0;
 }
 
 // process a sinle IPT packet and update AFL map

@@ -12,6 +12,8 @@ typedef struct _address_range {
 	char collect; // collect coverage for range or not
 } address_range;
 
+int check_trace_start(unsigned char *data, size_t size, uint64_t expected_ip);
+
 void analyze_trace_buffer_full(unsigned char *trace_data, size_t trace_size, u8 *trace_bits, int coverage_kind, module_info_t* modules, struct pt_image_section_cache *section_cache);
 void decode_trace_tip_fast(unsigned char *data, size_t size, u8 *trace_bits, int coverage_kind);
 void decode_trace_tip_reference(unsigned char *trace_data, size_t trace_size, u8 *trace_bits, int coverage_kind);
