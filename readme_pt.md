@@ -1,6 +1,6 @@
 # WinAFL Intel PT mode
 
-WinAFL has an Intel PT mode which, at this time, is very basic and very experimental
+WinAFL has an Intel PT mode which, at this time, is still considered experimental
 
 ## How it works
 
