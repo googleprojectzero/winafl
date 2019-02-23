@@ -1105,7 +1105,7 @@ int main(int argc, char** argv) {
     // Find the name of the target executable in the arguments
     for(; i < argc; i++) {
       if(strcmp(argv[i], "--") == 0) counter++;
-      if(counter == 2) {
+      if(counter == (drioless ? 1:2)) {
         if(i != (argc - 1)) {
           target_path = argv[i + 1];
         }
