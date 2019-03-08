@@ -1,7 +1,5 @@
 # WinAFL Intel PT mode
 
-WinAFL has an Intel PT mode which, at this time, is still considered experimental
-
 ## How it works
 
 Intel PT (Processor Tracing) is a feature on modern Intel CPUs that allows tracing code executed by the CPU. If the trace collection is enabled, the CPU generates a highly compressed trace of the instructions executed. This trace can be retrieved and decoded in software later.
@@ -12,7 +10,7 @@ When a target is fuzzed with WinAFL in Intel PT mode, WinAFL opens the target in
 
 ## Building and using
 
-To build WinAFL with Intel PT support add `-DINTELPT=1` to the build options.
+To build WinAFL with Intel PT support `-DINTELPT=1` must be added to the build options.
 
 To use the Intel PT mode set the -P flag (without any arguments) instead of -D flag (for DynamoRIO) when calling afl-fuzz.exe. Intel PT tracing mode understands the same instrumentation flags as the DynamoRIO mode, as well as several others:
 
@@ -22,22 +20,24 @@ To use the Intel PT mode set the -P flag (without any arguments) instead of -D f
  
  - `-nopersistent_trace` By default, due to large performance hit associated, WinAFL will not restart tracing for each iteration. If this optimization ever causes problems, it can be turned off via this flag. Mostly here for debugging reasons.
 
-## Remarks
+ - `-trace_cache_size <size>` The size (in bytes) of trace cache. Used only in combination with the `full` decorer.
 
- - Intel PT support is still consider experimental. Please report any bugs you encounter.
+The following trace decoders are available:
+ 
+ - `full_ref` Uses Intel's reference implementation to fully decode the trace. Note that full trace decoding introduces a significant overhead. Full trace decoding requires information about the code being executed. WinAFL accomplishes this by saving the memory from all executable modules in the process once they are loaded. However, if the instruction pointer ever ends up outside of an executable module (e.g. due to target using some kind of JIT), the decoding is going to fail and the trace will be decoded only partially. Additinally, if the target modifies executable modules on the fly, the result of the decoding is going to be unpredictable.
+
+ - `full` (default) A custom decoder that adds a trace caching layer on top of Intel's reference decoder. Like the `full_ref` decoder it fully decodes all basic blocks in the trace (also provided that code is't generated / modified dynamically), but is significantly faster.
+   
+ - `tip_ref` Uses Intel's reference decoder implementation and decodes only the packets that contain the raw IP address (emitted for e.g. indirect jumps and calls, sometimes returns) but don't decode other packets, e.g. containing info about indirect jumps. This option does not require having any information on the code being executed and is much faster than full decoding. This is similar to how Intel PT is used in [Honggfuzz](https://github.com/google/honggfuzz).
+   
+ - `tip` A faster custom implementation of the `tip_ref` decoder. It should behave the same as `tip_ref`
+
+## Limitations and other remarks
 
  - A relatively recent Intel CPU with the Processor Tracing feature is needed for this mode and Windows 10 v1809 is needed to be able to interact with it. Running WinAFL inside a VM won't work unless the VM software explicitly supports Intel PT.
 
  - The CPU writes trace information into a ring buffer. If the space in the ring buffer is not sufficient to store the full trace of the iteration execution, the buffer will wrap around and only the last `trace_size` bytes (or a little less, depending on the synchronization packets) will be available for processing. You should set the `trace_size` flags to be able to contain the full trace for a sample that exhibits full target behavior. The default `trace_size` should be sufficient for most targets, however reducing it might increase performance for small targets and you might want to increase it if you get trace buffer overflow warnings.
  
- - There are several options for decoding the trace, each with its advantages and drawbacks:
- 
-   - `full` (default) Uses Intel's reference implementation to fully decode the trace. Note that full trace decoding introduces a significant overhead. Full trace decoding requires information about the code being executed. WinAFL accomplishes this by saving the memory from all executable modules in the process once they are loaded. However, if the instruction pointer ever ends up outside of an executable module (e.g. due to target using some kind of JIT), the decoding is going to fail and the trace will be decoded only partially. Additinally, if the target modifies executable modules on the fly, the result of the decoding is going to be unpredictable.
-   
-   - `tip_ref` Uses Intel's reference decoder implementation and decodes only the packets that contain the raw IP address (emitted for e.g. indirect jumps and calls, sometimes returns) but don't decode other packets, e.g. containing info about indirect jumps. This option does not require having any information on the code being executed and is much faster than full decoding. This is similar to how Intel PT is used in [Honggfuzz](https://github.com/google/honggfuzz).
-   
-   - `tip` A faster custom implementation of the `tip_ref` decoder. It should behave the same as `tip_ref`
-
  - Currently, WinAFL will only record the trace from a thread that executes the target function. In most cases this is desirable, but not always. Currently, Intel PT driver does collect information from all threads and the debugger gets information about threads being created and threads exiting. However, when the debugger gets the EXIT_THREAD_DEBUG_EVENT, it is too late and the trace information for this thread is already lost. WinAFL could read out the trace while the thread is still running, however there would be a gap between the last time the trace was read out and the time the thread exited. This would result in a non-deterministic trace with a part of it cut off and, likely, not recording trace for very short threads. Thus, to address this problem deterministically, a better way of tracking thread exits is needed.
 
 ## Examples

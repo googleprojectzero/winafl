@@ -1,21 +1,21 @@
 /*
-WinAFL - Intel PT instrumentation and presistence via debugger code 
-------------------------------------------------
+  WinAFL - Intel PT instrumentation and presistence via debugger code 
+  ------------------------------------------------
 
-Written and maintained by Ivan Fratric <ifratric@google.com>
+  Written and maintained by Ivan Fratric <ifratric@google.com>
 
-Copyright 2016 Google Inc. All Rights Reserved.
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+  Copyright 2016 Google Inc. All Rights Reserved.
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
 
-http://www.apache.org/licenses/LICENSE-2.0
+  http://www.apache.org/licenses/LICENSE-2.0
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
 */
 
 #define  _CRT_SECURE_NO_WARNINGS
@@ -40,10 +40,13 @@ limitations under the License.
 
 #include "ptdecode.h"
 
+// tests the custom decoders gainst the corresponding
+// reference implementatopns from Intel
+// used only for debugging
+// #define DECODER_CORRECTNESS_TEST
+
 u64 get_cur_time(void);
 char *argv_to_cmd(char** argv);
-
-#define TRACE_BUFFER_SIZE_DEFAULT 131072 //should be a power of 2
 
 #define CALLCONV_MICROSOFT_X64 0
 #define CALLCONV_THISCALL 1
@@ -123,6 +126,14 @@ enum {
 	/* 05 */ FAULT_NOBITS
 };
 
+typedef struct _module_info_t {
+	char module_name[MAX_PATH];
+	int isid;
+	void *base;
+	size_t size;
+	struct _module_info_t *next;
+} module_info_t;
+
 static module_info_t *all_modules = NULL;
 
 typedef struct _winafl_option_t {
@@ -138,6 +149,7 @@ typedef struct _winafl_option_t {
 	int decoder;
 	bool thread_coverage;
 	unsigned long trace_buffer_size;
+	unsigned long trace_cache_size;
 	bool persistent_trace;
 
 	void **func_args;
@@ -174,8 +186,9 @@ winaflpt_options_init(int argc, const char *argv[])
 	options.num_fuz_args = 0;
 	options.thread_coverage = true;
 	options.callconv = CALLCONV_DEFAULT;
-	options.decoder = DECODER_FULL_REFERENCE;
+	options.decoder = DECODER_FULL_FAST;
 	options.trace_buffer_size = TRACE_BUFFER_SIZE_DEFAULT;
+	options.trace_cache_size = 0;
 	options.persistent_trace = true;
 
 	for (i = 0; i < argc; i++) {
@@ -227,6 +240,10 @@ winaflpt_options_init(int argc, const char *argv[])
 			USAGE_CHECK((i + 1) < argc, "missing trace size");
 			options.trace_buffer_size = strtoul(argv[++i], NULL, 0);
 		}
+		else if (strcmp(token, "-trace_cache_size") == 0) {
+			USAGE_CHECK((i + 1) < argc, "missing trace cache size");
+			options.trace_cache_size = strtoul(argv[++i], NULL, 0);
+		}
 		else if (strcmp(token, "-call_convention") == 0) {
 			USAGE_CHECK((i + 1) < argc, "missing calling convention");
 			++i;
@@ -248,6 +265,8 @@ winaflpt_options_init(int argc, const char *argv[])
 			else if (strcmp(argv[i], "tip_ref") == 0)
 				options.decoder = DECODER_TIP_REFERENCE;
 			else if (strcmp(argv[i], "full") == 0)
+				options.decoder = DECODER_FULL_FAST;
+			else if (strcmp(argv[i], "full_ref") == 0)
 				options.decoder = DECODER_FULL_REFERENCE;
 			else
 				FATAL("Unknown decoder value");
@@ -349,14 +368,18 @@ void append_trace_data(unsigned char *trace_data, size_t append_size) {
 	trace_size += append_size;
 }
 
-unsigned char psb_and_psbend[] = {
-	0x02, 0x82, 0x02, 0x82, 0x02, 0x82, 0x02, 0x82,
-	0x02, 0x82, 0x02, 0x82, 0x02, 0x82, 0x02, 0x82,
-	0x02, 0x23
-};
 
-void collect_thread_trace(PIPT_TRACE_HEADER traceHeader) {
+// returns true if the ring buffer was overflowed
+bool collect_thread_trace(PIPT_TRACE_HEADER traceHeader) {
 	// printf("ring offset: %u\n", traceHeader->RingBufferOffset);
+
+	bool trace_buffer_overflow = false;
+
+	unsigned char psb_and_psbend[] = {
+		0x02, 0x82, 0x02, 0x82, 0x02, 0x82, 0x02, 0x82,
+		0x02, 0x82, 0x02, 0x82, 0x02, 0x82, 0x02, 0x82,
+		0x02, 0x23
+	};
 
 	trace_size = 0;
 
@@ -382,6 +405,7 @@ void collect_thread_trace(PIPT_TRACE_HEADER traceHeader) {
 			// most likely the ring buffer overflowd, extract what we can (trace tail)
 
 			trace_size = 0;
+			trace_buffer_overflow = true;
 
 			printf("Warning: Trace buffer overflowed, trace will be truncated\n");
 			if (options.debug_mode) fprintf(debug_log, "Trace buffer overflowed, trace will be truncated\n");
@@ -403,6 +427,7 @@ void collect_thread_trace(PIPT_TRACE_HEADER traceHeader) {
 		char *trailing_data = traceHeader->Trace + traceHeader->RingBufferOffset;
 		size_t trailing_size = traceHeader->TraceSize - traceHeader->RingBufferOffset;
 		if (findpsb(&trailing_data, &trailing_size)) {
+			trace_buffer_overflow = true;
 			printf("Warning: Trace buffer overflowed, trace will be truncated\n");
 			if (options.debug_mode) fprintf(debug_log, "Trace buffer overflowed, trace will be truncated\n");
 			append_trace_data(trailing_data, trailing_size);
@@ -410,11 +435,16 @@ void collect_thread_trace(PIPT_TRACE_HEADER traceHeader) {
 
 		append_trace_data(traceHeader->Trace, traceHeader->RingBufferOffset);
 	}
+
+	return trace_buffer_overflow;
 }
 
 // parse PIPT_TRACE_DATA, extract trace bits and add them to the trace_buffer
-int collect_trace(PIPT_TRACE_DATA pTraceData)
+// returns true if the trace ring buffer overflowed
+bool collect_trace(PIPT_TRACE_DATA pTraceData)
 {
+	bool trace_buffer_overflow = false;
+
 	PIPT_TRACE_HEADER traceHeader;
 	DWORD dwTraceSize;
 
@@ -424,7 +454,7 @@ int collect_trace(PIPT_TRACE_DATA pTraceData)
 
 	while (dwTraceSize > (unsigned)(FIELD_OFFSET(IPT_TRACE_HEADER, Trace))) {
 		if (traceHeader->ThreadId == fuzz_thread_id) {
-			collect_thread_trace(traceHeader);
+			trace_buffer_overflow = collect_thread_trace(traceHeader);
 		}
 
 		dwTraceSize -= (FIELD_OFFSET(IPT_TRACE_HEADER, Trace) + traceHeader->TraceSize);
@@ -433,7 +463,7 @@ int collect_trace(PIPT_TRACE_DATA pTraceData)
 			traceHeader->TraceSize);
 	}
 
-	return 0;
+	return trace_buffer_overflow;
 }
 
 // returns an array of handles for all modules loaded in the target process
@@ -1421,12 +1451,12 @@ int run_target_pt(char **argv, uint32_t timeout) {
 	// printf("iteration end\n");
 
 	// collect trace
+	bool trace_buffer_overflowed = false;
 	PIPT_TRACE_DATA trace_data = GetIptTrace(child_handle);
 	if (!trace_data) {
 		printf("Error getting ipt trace\n");
-	}
-	else {
-		collect_trace(trace_data);
+	} else {
+		trace_buffer_overflowed = collect_trace(trace_data);
 		HeapFree(GetProcessHeap(), 0, trace_data);
 	}
 
@@ -1446,13 +1476,51 @@ int run_target_pt(char **argv, uint32_t timeout) {
 
 	// printf("decoding trace of %llu bytes\n", trace_size);
 
-	if (options.decoder == DECODER_TIP_FAST) {
-		decode_trace_tip_fast(trace_buffer, trace_size, trace_bits, options.coverage_kind);
-	} else if (options.decoder == DECODER_TIP_REFERENCE) {
-		decode_trace_tip_reference(trace_buffer, trace_size, trace_bits, options.coverage_kind);
-	} else if (options.decoder == DECODER_FULL_REFERENCE) {
-		analyze_trace_buffer_full(trace_buffer, trace_size, trace_bits, options.coverage_kind, all_modules, section_cache);
+	struct pt_image *image = NULL;
+	if ((options.decoder == DECODER_FULL_FAST) || (options.decoder == DECODER_FULL_REFERENCE)) {
+		image = pt_image_alloc("winafl_image");
+		module_info_t *cur_module = all_modules;
+		while (cur_module) {
+			if (cur_module->isid > 0) {
+				int ret = pt_image_add_cached(image, section_cache, cur_module->isid, NULL);
+			}
+			cur_module = cur_module->next;
+		}
 	}
+
+	if (options.decoder == DECODER_TIP_FAST) {
+		decode_trace_tip_fast(trace_buffer, trace_size, options.coverage_kind);
+#ifdef DECODER_CORRECTNESS_TEST
+		printf("Testing decoder correctness\n");
+		unsigned char *fast_trace_bits = (unsigned char *)malloc(MAP_SIZE);
+		memcpy(fast_trace_bits, trace_bits, MAP_SIZE);
+		memset(trace_bits, 0, MAP_SIZE);
+		decode_trace_tip_reference(trace_buffer, trace_size, options.coverage_kind);
+		if (memcmp(fast_trace_bits, trace_bits, MAP_SIZE)) {
+			FATAL("Fast decoder returned different coverage than the reference decoder");
+		}
+		free(fast_trace_bits);
+#endif
+	} else if (options.decoder == DECODER_TIP_REFERENCE) {
+		decode_trace_tip_reference(trace_buffer, trace_size, options.coverage_kind);
+	} else if (options.decoder == DECODER_FULL_FAST) {
+		analyze_trace_full_fast(trace_buffer, trace_size, options.coverage_kind, image, trace_buffer_overflowed);
+#ifdef DECODER_CORRECTNESS_TEST
+		printf("Testing decoder correctness\n");
+		unsigned char *fast_trace_bits = (unsigned char *)malloc(MAP_SIZE);
+		memcpy(fast_trace_bits, trace_bits, MAP_SIZE);
+		memset(trace_bits, 0, MAP_SIZE);
+		analyze_trace_full_reference(trace_buffer, trace_size, options.coverage_kind, image, trace_buffer_overflowed);
+		if (memcmp(fast_trace_bits, trace_bits, MAP_SIZE)) {
+			FATAL("Fast decoder returned different coverage than the reference decoder");
+		}
+		free(fast_trace_bits);
+#endif
+	} else if (options.decoder == DECODER_FULL_REFERENCE) {
+		analyze_trace_full_reference(trace_buffer, trace_size, options.coverage_kind, image, trace_buffer_overflowed);
+	}
+
+	if(image) pt_image_free(image);
 
 	if (debugger_status == DEBUGGER_PROCESS_EXIT) {
 		CloseHandle(child_handle);
@@ -1512,6 +1580,20 @@ int pt_init(int argc, char **argv, char *module_dir) {
 		section_cache = pt_iscache_alloc("winafl_cache");
 	}
 	strcpy(section_cache_dir, module_dir);
+
+	if (options.decoder == DECODER_FULL_FAST) {
+		if (!options.trace_cache_size) {
+			// simple heuristics for determining tracelet cache size
+			// within reasonable bounds
+			options.trace_cache_size = options.trace_buffer_size * 10;
+			if (options.trace_cache_size < TRACE_CACHE_SIZE_MIN)
+				options.trace_cache_size = TRACE_CACHE_SIZE_MIN;
+			if (options.trace_cache_size > TRACE_CACHE_SIZE_MAX)
+				options.trace_cache_size = TRACE_CACHE_SIZE_MAX;
+
+		}
+		tracelet_cache_init(options.trace_cache_size / 100, options.trace_cache_size);
+	}
 
 	return lastoption;
 }

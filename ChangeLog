@@ -6,6 +6,15 @@ ChangeLog
 Version 1.15 (based on afl 2.43b):
 ----------------------------------
 
+  - Intel PT support.
+
+  - Fix target_path in afl-showmap in drioless mode
+    Contributed by L4ys
+
+----------------------------------
+Version 1.15 (based on afl 2.43b):
+----------------------------------
+
   - Added -p flag which persists DynamoRIO cache across process restarts.
     This might have a slight positive impact on performance in some scenarios,
     such as where WinAFL persistece can't be used effectively, or
