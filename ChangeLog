@@ -3,7 +3,7 @@ ChangeLog
 =========
 
 ----------------------------------
-Version 1.15 (based on afl 2.43b):
+Version 1.16 (based on afl 2.43b):
 ----------------------------------
 
   - Intel PT support.
