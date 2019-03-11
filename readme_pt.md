@@ -64,9 +64,9 @@ The following trace decoders are available:
    
  - `tip` A faster custom implementation of the `tip_ref` decoder. It should behave the same as `tip_ref`
 
-## The fast decoder
+## The fast full decoder
 
-Note: This section contains technical details about the `fast` decoder, and is not a required reading if you are only interested in using WinAFL.
+Note: This section contains technical details about the `full` decoder, and is not a required reading if you are only interested in using WinAFL.
 
 The "fast" decoder is in fact a caching layer on top of the Intel's reference decoder. It exploits the fact that, when fuzzing, most of the iterations (especially subsequent iterations) will have mostly identical coverage. At the same time, they won’t have completely identical coverage (due to e.g. not the same paths taken in allocators) or completely identical trace (due to e.g. asynchronous events occurring at different times). However, large parts of the trace are going to be the same.
 
@@ -80,8 +80,4 @@ Next time the same tracelet is seen *and* the decoder state is the same, coverag
 
 Note however that traces can't be split into tracelets at random points, partly because of the reference decoder implementation details but also due to out-of-order packet feature of Intel PT: If the CPU has a TNT packet that is not full (and thus not yet sent), to save space CPU is also going to delay other packets (e.g. TIP packets) until the TNT packet gets filled. At the point when TNT packet gets filled, the TNT packet is going to get sent together with all delayed packets. To resolve this issue, tracelets are always cut *before* a TNT packet (which implies that the previous TNT packet was sent togerher with all the delayed packets). This approach seems to also play nicely with the reference decoder implementation.
 
-Another issue that the decoder must solve is the return address compression: Intel PT expects the decoder to keep track of the call stack and, when the return instruction is encountered, if the actual return address matches the one on the decoder stack, instead of emitting the entire return address, Intel PT is only going to emit a single bit that indicates the return address should be taken from the decoder call stack. To support this feature, the `fast` decoder monitors call stack changes when the tracelet is first executed and the relevant changes are saved together with the "before" and "after" state. Specifically, each tracelet cache entry contains the data consumed from the stack during the traclet execution (these need to match the top of the decoder stack in order for the states to "match") and the values added to the stack during the tracelet execution (these are used to update the decoder state).
-
-
-
-
+Another issue that the decoder must solve is the return address compression: Intel PT expects the decoder to keep track of the call stack and, when the return instruction is encountered, if the actual return address matches the one on the decoder stack, instead of emitting the entire return address, Intel PT is only going to emit a single bit that indicates the return address should be taken from the decoder call stack. To support this feature, the "fast" decoder monitors call stack changes when the tracelet is first executed and the relevant changes are saved together with the "before" and "after" state. Specifically, each tracelet cache entry contains the data consumed from the stack during the traclet execution (these need to match the top of the decoder stack in order for the states to "match") and the values added to the stack during the tracelet execution (these are used to update the decoder state).
