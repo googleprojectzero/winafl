@@ -39,7 +39,7 @@
 #include <direct.h>
 
 #define VERSION "2.43b"
-#define WINAFL_VERSION "1.16"
+#define WINAFL_VERSION "1.16b"
 
 #include "config.h"
 #include "types.h"
