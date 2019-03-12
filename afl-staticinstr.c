@@ -556,6 +556,12 @@ Return Value:
     }
 
     //
+    // Tell afl-fuzz that we are ready for the next iteration.
+    //
+
+    WriteFile(g_winafl_pipe, "P", 1, &Dummy, NULL);
+
+    //
     // Wait until we have the go from afl-fuzz to go ahead (below call is blocking).
     //
 
