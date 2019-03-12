@@ -135,6 +135,12 @@ if (${INTELPT})
 
 endif()
 
+project(afl-proxy)
+
+add_definitions(-DAFL_PROXY_MODE)
+
+add_library(afl-proxy SHARED afl-staticinstr.c)
+
 if (NOT "${DynamoRIO_DIR}" STREQUAL "")
 
   project(WinAFL)

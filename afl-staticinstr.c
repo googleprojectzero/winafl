@@ -44,6 +44,12 @@ typedef struct {
 HANDLE g_winafl_pipe = INVALID_HANDLE_VALUE;
 
 //
+// The shared trace_bits area from afl-fuzz.exe
+//
+
+PUCHAR g_coverage_data = NULL;
+
+//
 // The no fuzzing mode is enabled when a binary is run without
 // passing the fuzzing configuration in the AFL_STATIC_CONFIG
 // environment variable (running a binary by itself, without
@@ -104,6 +110,32 @@ SIZE_T g_niterations = 0;
 
 CRITICAL_SECTION g_crit_section;
 INIT_ONCE g_init_once = INIT_ONCE_STATIC_INIT, g_init_once_bareminimum = INIT_ONCE_STATIC_INIT;
+
+//
+// The proxy mode is enabled for the scenario that the
+// program acts as a proxy for the fuzzing target, which
+// can be software running in other domains such as the
+// operating system kernel.  The proxy program should
+// invoke the fuzzing target and update the coverage
+// data accordingly.
+//
+
+__declspec(dllexport)
+BOOL __afl_is_proxy_mode(void)
+{
+#ifdef AFL_PROXY_MODE
+    return TRUE;
+#else
+    return FALSE;
+#endif
+}
+
+__declspec(dllexport)
+PUCHAR __afl_get_coverage_area(size_t *size)
+{
+    *size = MAP_SIZE;
+    return g_coverage_data;
+}
 
 LONG CALLBACK __afl_VectoredHandler(PEXCEPTION_POINTERS ExceptionInfo)
 
@@ -246,6 +278,7 @@ Return Value:
         TerminateProcess(GetCurrentProcess(), 0);
     }
 
+#ifndef AFL_PROXY_MODE
     for(i = 0; i < SizeNeeded / sizeof(Modules[0]); ++i) {
         PVOID Base = (PVOID)Modules[i];
         PIMAGE_NT_HEADERS NtHeaders = (PIMAGE_NT_HEADERS)((PUCHAR)Base + ((PIMAGE_DOS_HEADER)Base)->e_lfanew);
@@ -291,6 +324,7 @@ Return Value:
         _tprintf(TEXT("[-] No instrumented module found.\n"));
         Status = FALSE;
     }
+#endif
 
     //
     // Let's figure out, if afl-fuzz.exe spawned us or not?
@@ -376,6 +410,8 @@ Return Value:
         goto clean;
     }
 
+    g_coverage_data = (PUCHAR)AreaPtr;
+
     //
     // Fix up the instrumented modules so that the pointer storing the base
     // of the coverage map points to the shared memory section we just mapped in.
@@ -391,6 +427,7 @@ Return Value:
 
     clean:
 
+#ifndef AFL_PROXY_MODE
     if(g_nofuzzing_mode == FALSE && g_noinstrumentation == TRUE) {
 
         //
@@ -407,6 +444,7 @@ Return Value:
             MB_OK | MB_ICONERROR
         );
     }
+#endif
 
     if(MappedFile != NULL) {
         CloseHandle(MappedFile);
@@ -466,6 +504,7 @@ Return Value:
     return TRUE;
 }
 
+__declspec(dllexport)
 BOOL __afl_persistent_loop()
 
 /*++
@@ -540,7 +579,8 @@ Return Value:
         CloseHandle(g_winafl_pipe);
         g_winafl_pipe = INVALID_HANDLE_VALUE;
 
-        UnmapViewOfFile(g_static_coverage_data[0]->__afl_area_ptr);
+        UnmapViewOfFile(g_coverage_data);
+        g_coverage_data = NULL;
 
         //
         // Redirect the coverage map back into the instrumented binary's
@@ -556,7 +596,7 @@ Return Value:
     }
 
     //
-    // Tell afl-fuzz that we are ready for the next iteration.
+    // Tell afl-fuzz.exe that we are ready for the next iteration.
     //
 
     WriteFile(g_winafl_pipe, "P", 1, &Dummy, NULL);
@@ -718,6 +758,7 @@ Return Value:
 
 #endif
 
+#ifndef AFL_PROXY_MODE
     if(g_noinstrumentation == FALSE) {
 
         //
@@ -746,6 +787,7 @@ Return Value:
 
         memset(g_static_coverage_data[0]->__afl_area_ptr, 0, MAP_SIZE);
     }
+#endif
 
 #ifdef AFL_STATIC_VARIABLE_BEHAVIOR_DEBUG
 

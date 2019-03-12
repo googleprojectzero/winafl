@@ -31,8 +31,10 @@
 #include <stdint.h>
 #include <tchar.h>
 
+#ifndef AFL_PROXY_MODE
 #if defined(_M_X64) || defined(__amd64__)
 #error Static instrumentation is only available for 32 bit binaries
+#endif
 #endif
 
 //
@@ -45,6 +47,7 @@
 extern "C" {
 #endif
 
+__declspec(dllexport)
 BOOL __afl_persistent_loop();
 
 #ifdef __cplusplus
