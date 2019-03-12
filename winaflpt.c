@@ -1071,9 +1071,11 @@ int handle_breakpoint(void *address, DWORD thread_id) {
 // standard debugger loop that listens to relevant events in the target process
 int debug_loop()
 {
+	bool alive = true;
+
 	LPDEBUG_EVENT DebugEv = &dbg_debug_event;
 
-	for (;;)
+	while(alive)
 	{
 
 		BOOL wait_ret = WaitForDebugEvent(DebugEv, 100);
@@ -1166,10 +1168,8 @@ int debug_loop()
 			break;
 
 		case EXIT_PROCESS_DEBUG_EVENT:
-			ContinueDebugEvent(DebugEv->dwProcessId,
-				DebugEv->dwThreadId,
-				dbg_continue_status);
-			return DEBUGGER_PROCESS_EXIT;
+			alive = false;
+			break;
 
 		case LOAD_DLL_DEBUG_EVENT: {
 			// Don't do anything until the processentrypoint is reached.
@@ -1213,14 +1213,18 @@ int debug_loop()
 			DebugEv->dwThreadId,
 			dbg_continue_status);
 	}
+
+	return DEBUGGER_PROCESS_EXIT;
 }
 
 // a simpler debugger loop that just waits for the process to exit
 void wait_process_exit()
 {
+	bool alive = true;
+
 	LPDEBUG_EVENT DebugEv = &dbg_debug_event;
 
-	for (;;)
+	while (alive)
 	{
 		dbg_continue_status = DBG_CONTINUE;
 
@@ -1241,10 +1245,8 @@ void wait_process_exit()
 			break;
 
 		case EXIT_PROCESS_DEBUG_EVENT:
-			ContinueDebugEvent(DebugEv->dwProcessId,
-				DebugEv->dwThreadId,
-				dbg_continue_status);
-			return;
+			alive = false;
+			break;
 
 		case LOAD_DLL_DEBUG_EVENT:
 			CloseHandle(DebugEv->u.LoadDll.hFile);
