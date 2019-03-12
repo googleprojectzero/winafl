@@ -52,6 +52,11 @@ add_executable(test_gdiplus
 
 target_link_libraries(test_gdiplus gdiplus)
 
+project(afl-analyze)
+add_executable(afl-analyze
+  afl-analyze.c
+  )
+
 project(afl-showmap)
 
 add_executable(afl-showmap
