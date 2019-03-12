@@ -2,6 +2,20 @@
 ChangeLog
 =========
 
+-----------------------------------
+Version 1.16b (based on afl 2.43b):
+-----------------------------------
+
+  - Fixed an issue with Intel PT mode where target processes were not
+    terminated properly.
+    Reported by Jason Shirk
+    
+  - Added a port of afl-analyze
+    Contributed by L4ys
+
+  - DynamoRIO version update - started building prebuilt binaries with
+    DynamoRIO 7.1
+ 
 ----------------------------------
 Version 1.16 (based on afl 2.43b):
 ----------------------------------
