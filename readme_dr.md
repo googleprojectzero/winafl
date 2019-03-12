@@ -64,6 +64,11 @@ The following instrumentation options are supported in the DynamoRIO mode:
 
 ## Using
 
+Note: If you are using pre-built binaries you'll need to download DynamoRIO
+release 7.1.0-1 from https://github.com/DynamoRIO/dynamorio/wiki/Downloads.
+If you built WinAFL from source, you can use whatever version of DynamoRIO
+you used to build WinAFL.
+
 In general, you should perform the following steps when fuzzing a new target:
 
 1. Make sure your target is running correctly without instrumentations.
