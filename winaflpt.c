@@ -1166,6 +1166,9 @@ int debug_loop()
 			break;
 
 		case EXIT_PROCESS_DEBUG_EVENT:
+			ContinueDebugEvent(DebugEv->dwProcessId,
+				DebugEv->dwThreadId,
+				dbg_continue_status);
 			return DEBUGGER_PROCESS_EXIT;
 
 		case LOAD_DLL_DEBUG_EVENT: {
@@ -1238,6 +1241,9 @@ void wait_process_exit()
 			break;
 
 		case EXIT_PROCESS_DEBUG_EVENT:
+			ContinueDebugEvent(DebugEv->dwProcessId,
+				DebugEv->dwThreadId,
+				dbg_continue_status);
 			return;
 
 		case LOAD_DLL_DEBUG_EVENT:
