@@ -503,6 +503,7 @@ void *get_entrypoint(void *base_address) {
 		FATAL("Unknown PE magic value\n");
 	} 
 	DWORD entrypoint_offset = *((DWORD *)(pe + 16));
+	if (entrypoint_offset == 0) return NULL;
 	return (char *)base_address + entrypoint_offset;
 }
 
@@ -1192,7 +1193,16 @@ int debug_loop()
 				{
 					void *entrypoint = get_entrypoint(DebugEv->u.LoadDll.lpBaseOfDll);
 					// printf("module %s entrypoint %p\n", base_name, entrypoint);
-					add_breakpoint(entrypoint, BREAKPOINT_MODULELOADED, base_name, DebugEv->u.LoadDll.lpBaseOfDll);
+					// if there is no entrypoint assume resource-only dll
+					if (entrypoint) {
+						add_breakpoint(entrypoint, BREAKPOINT_MODULELOADED,
+							base_name, DebugEv->u.LoadDll.lpBaseOfDll);
+					} else {
+						printf("Warning: module %s has no entrypoint, "
+							"assuming resource-only. "
+							"If you believe this is not the case, "
+							"please file a bug\n", base_name);
+					}
 				}
 			}
 			CloseHandle(DebugEv->u.LoadDll.hFile);
