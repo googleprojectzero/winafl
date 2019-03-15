@@ -7679,6 +7679,7 @@ void load_custom_library(const char *libname)
 #else
   dll_init_ptr = (dll_init)GetProcAddress(hLib, "_dll_init@0");
 #endif
+  SAYF("dll_init is %sdefined.\n", dll_init_ptr ? "" : "not ");
 
   //Get pointer to user-defined test cases sending function using GetProcAddress:
 #ifdef _WIN64
@@ -7686,6 +7687,7 @@ void load_custom_library(const char *libname)
 #else
   dll_run_ptr = (dll_run)GetProcAddress(hLib, "_dll_run@12");
 #endif
+  SAYF("dll_run_ptr is %sdefined.\n", dll_run_ptr ? "" : "not ");
 
   // Get pointer to user-defined run_target function using GetProcAddress:
 #ifdef _WIN64
@@ -7693,6 +7695,7 @@ void load_custom_library(const char *libname)
 #else
   dll_run_target_ptr = (dll_run_target)GetProcAddress(hLib, "_dll_run_target@16");
 #endif
+  SAYF("dll_run_target is %sdefined.\n", dll_run_target_ptr ? "" : "not ");
 
   SAYF("Sucessfully loaded and initalized\n");
 }
