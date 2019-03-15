@@ -7674,28 +7674,16 @@ void load_custom_library(const char *libname)
 
   /* init the custom server */
   // Get pointer to user-defined server initialization function using GetProcAddress:
-#ifdef _WIN64
   dll_init_ptr = (dll_init)GetProcAddress(hLib, "dll_init");
-#else
-  dll_init_ptr = (dll_init)GetProcAddress(hLib, "_dll_init@0");
-#endif
-  SAYF("dll_init is %sdefined.\n", dll_init_ptr ? "" : "not ");
+  SAYF("dll_init %s defined.\n", dll_init_ptr ? "is" : "isn't");
 
-  //Get pointer to user-defined test cases sending function using GetProcAddress:
-#ifdef _WIN64
+  // Get pointer to user-defined test cases sending function using GetProcAddress:
   dll_run_ptr = (dll_run)GetProcAddress(hLib, "dll_run");
-#else
-  dll_run_ptr = (dll_run)GetProcAddress(hLib, "_dll_run@12");
-#endif
-  SAYF("dll_run_ptr is %sdefined.\n", dll_run_ptr ? "" : "not ");
+  SAYF("dll_run_ptr %s defined.\n", dll_run_ptr ? "is" : "isn't");
 
   // Get pointer to user-defined run_target function using GetProcAddress:
-#ifdef _WIN64
   dll_run_target_ptr = (dll_run_target)GetProcAddress(hLib, "dll_run_target");
-#else
-  dll_run_target_ptr = (dll_run_target)GetProcAddress(hLib, "_dll_run_target@16");
-#endif
-  SAYF("dll_run_target is %sdefined.\n", dll_run_target_ptr ? "" : "not ");
+  SAYF("dll_run_target %s defined.\n", dll_run_target_ptr ? "is" : "isn't");
 
   SAYF("Sucessfully loaded and initalized\n");
 }
