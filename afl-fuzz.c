@@ -2520,10 +2520,12 @@ static int is_child_running() {
 //Define the function prototypes
 typedef int (APIENTRY* dll_run)(char*, long, int);
 typedef int (APIENTRY* dll_init)();
+typedef u8 (APIENTRY* dll_run_target)(char**, u32, char*, u32);
 
 // custom server functions
 dll_run dll_run_ptr = NULL;
 dll_init dll_init_ptr = NULL;
+dll_run_target dll_run_target_ptr = NULL;
 
 char *get_test_case(long *fsize)
 {
@@ -2566,6 +2568,10 @@ static int process_test_case_into_dll(int fuzz_iterations)
 static u8 run_target(char** argv, u32 timeout) {
 	total_execs++;
 
+    if (dll_run_target_ptr) {
+      return dll_run_target_ptr(argv, timeout, trace_bits, MAP_SIZE);
+    }
+
 #ifdef INTELPT
 	if (use_intelpt) {
 		return run_target_pt(argv, timeout);
@@ -2591,7 +2597,7 @@ static u8 run_target(char** argv, u32 timeout) {
     }
   }
 
-  if (custom_dll_defined) {
+  if (dll_init_ptr) {
     if (!dll_init_ptr())
       PFATAL("User-defined custom initialization routine returned 0");
   }
@@ -2602,7 +2608,7 @@ static u8 run_target(char** argv, u32 timeout) {
     fuzz_iterations_current = 0;
   }
 
-  if (custom_dll_defined)
+  if (dll_run_ptr)
     process_test_case_into_dll(fuzz_iterations_current);
 
   child_timed_out = 0;
@@ -7668,14 +7674,16 @@ void load_custom_library(const char *libname)
 
   /* init the custom server */
   // Get pointer to user-defined server initialization function using GetProcAddress:
-  dll_init_ptr = (dll_init)GetProcAddress(hLib, "_dll_init@0");
-  if (dll_init_ptr == NULL)
-    FATAL("Unable to load _dll_init from the DLL provided by user");
+  dll_init_ptr = (dll_init)GetProcAddress(hLib, "dll_init");
+  SAYF("dll_init %s defined.\n", dll_init_ptr ? "is" : "isn't");
 
-  //Get pointer to user-defined test cases sending function using GetProcAddress:
-  dll_run_ptr = (dll_run)GetProcAddress(hLib, "_dll_run@12");
-  if (dll_run_ptr == NULL)
-    FATAL("Unable to load _dll_run from the DLL provided by user");
+  // Get pointer to user-defined test cases sending function using GetProcAddress:
+  dll_run_ptr = (dll_run)GetProcAddress(hLib, "dll_run");
+  SAYF("dll_run_ptr %s defined.\n", dll_run_ptr ? "is" : "isn't");
+
+  // Get pointer to user-defined run_target function using GetProcAddress:
+  dll_run_target_ptr = (dll_run_target)GetProcAddress(hLib, "dll_run_target");
+  SAYF("dll_run_target %s defined.\n", dll_run_target_ptr ? "is" : "isn't");
 
   SAYF("Sucessfully loaded and initalized\n");
 }

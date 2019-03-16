@@ -1,0 +1,3 @@
+EXPORTS
+dll_init
+dll_run
