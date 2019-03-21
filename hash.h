@@ -40,7 +40,7 @@
 
 #include "types.h"
 
-#ifdef __x86_64__
+#ifdef _WIN64
 
 #define ROL64(_x, _r)  ((((u64)(_x)) << (_r)) | (((u64)(_x)) >> (64 - (_r))))
 
@@ -110,6 +110,6 @@ static inline u32 hash32(const void* key, u32 len, u32 seed) {
 
 }
 
-#endif /* ^__x86_64__ */
+#endif /* ^_WIN64 */
 
 #endif /* !_HAVE_HASH_H */

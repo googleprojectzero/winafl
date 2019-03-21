@@ -909,7 +909,7 @@ static void read_bitmap(u8* fname) {
 static inline u8 has_new_bits(u8* virgin_map) {
 
 
-#ifdef __x86_64__
+#ifdef _WIN64
 
   u64* current = (u64*)trace_bits;
   u64* virgin  = (u64*)virgin_map;
@@ -923,7 +923,7 @@ static inline u8 has_new_bits(u8* virgin_map) {
 
   u32  i = (MAP_SIZE >> 2);
 
-#endif /* ^__x86_64__ */
+#endif /* ^_WIN64 */
 
   u8   ret = 0;
 
@@ -943,7 +943,7 @@ static inline u8 has_new_bits(u8* virgin_map) {
         /* Looks like we have not found any new bytes yet; see if any non-zero
            bytes in current[] are pristine in virgin[]. */
 
-#ifdef __x86_64__
+#ifdef _WIN64
 
         if ((cur[0] && vir[0] == 0xff) || (cur[1] && vir[1] == 0xff) ||
             (cur[2] && vir[2] == 0xff) || (cur[3] && vir[3] == 0xff) ||
@@ -957,7 +957,7 @@ static inline u8 has_new_bits(u8* virgin_map) {
             (cur[2] && vir[2] == 0xff) || (cur[3] && vir[3] == 0xff)) ret = 2;
         else ret = 1;
 
-#endif /* ^__x86_64__ */
+#endif /* ^_WIN64 */
 
       }
 
@@ -1090,7 +1090,7 @@ static const u8 simplify_lookup[256] = {
 
 };
 
-#ifdef __x86_64__
+#ifdef _WIN64
 
 static void simplify_trace(u64* mem) {
 
@@ -1147,7 +1147,7 @@ static void simplify_trace(u32* mem) {
 
 }
 
-#endif /* ^__x86_64__ */
+#endif /* ^_WIN64 */
 
 
 /* Destructively classify execution counts in a trace. This is used as a
@@ -1181,7 +1181,7 @@ static void init_count_class16(void) {
 }
 
 
-#ifdef __x86_64__
+#ifdef _WIN64
 
 static inline void classify_counts(u64* mem) {
 
@@ -1233,7 +1233,7 @@ static inline void classify_counts(u32* mem) {
 
 }
 
-#endif /* ^__x86_64__ */
+#endif /* ^_WIN64 */
 
 
 /* Get rid of shared memory (atexit handler). */
@@ -2647,11 +2647,11 @@ static u8 run_target(char** argv, u32 timeout) {
   MemoryBarrier();
   watchdog_enabled = 0;
 
-#ifdef __x86_64__
+#ifdef _WIN64
   classify_counts((u64*)trace_bits);
 #else
   classify_counts((u32*)trace_bits);
-#endif /* ^__x86_64__ */
+#endif /* ^_WIN64 */
 
   fuzz_iterations_current++;
 
@@ -3353,11 +3353,11 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 
       if (!dumb_mode) {
 
-#ifdef __x86_64__
+#ifdef _WIN64
         simplify_trace((u64*)trace_bits);
 #else
         simplify_trace((u32*)trace_bits);
-#endif /* ^__x86_64__ */
+#endif /* ^_WIN64 */
 
         if (!has_new_bits(virgin_tmout)) return keeping;
 
@@ -3409,11 +3409,11 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 
       if (!dumb_mode) {
 
-#ifdef __x86_64__
+#ifdef _WIN64
         simplify_trace((u64*)trace_bits);
 #else
         simplify_trace((u32*)trace_bits);
-#endif /* ^__x86_64__ */
+#endif /* ^_WIN64 */
 
         if (!has_new_bits(virgin_crash)) return keeping;
 
