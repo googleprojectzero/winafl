@@ -54,11 +54,11 @@
 
 /* Default memory limit for child process (MB): */
 
-#ifndef __x86_64__ 
+#ifndef _WIN64 
 #  define MEM_LIMIT         0
 #else
 #  define MEM_LIMIT         0
-#endif /* ^!__x86_64__ */
+#endif /* ^!_WIN64 */
 
 /* Default memory limit when running in QEMU mode (MB): */
 
