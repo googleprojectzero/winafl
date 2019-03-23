@@ -7933,7 +7933,7 @@ int main(int argc, char** argv) {
 
   if (use_intelpt) {
 #ifdef INTELPT
-	  char *modules_dir = alloc_printf("%s\\ptmodules", out_dir);
+	  char *modules_dir = alloc_printf("%s\\%s\\ptmodules", out_dir, sync_id);
 	  int pt_options = pt_init(argc - optind, argv + optind, modules_dir);
 	  ck_free(modules_dir);
 	  if (!pt_options) usage(argv[0]);
