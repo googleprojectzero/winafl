@@ -7931,9 +7931,15 @@ int main(int argc, char** argv) {
 
   if (!in_dir || !out_dir || !timeout_given || (!drioless && !dynamorio_dir && !use_intelpt)) usage(argv[0]);
 
+
+  setup_signal_handlers();
+  check_asan_opts();
+
+  if (sync_id) fix_up_sync();
+
   if (use_intelpt) {
 #ifdef INTELPT
-	  char *modules_dir = alloc_printf("%s\\%s\\ptmodules", out_dir, sync_id);
+	  char *modules_dir = alloc_printf("%s\\ptmodules", out_dir);
 	  int pt_options = pt_init(argc - optind, argv + optind, modules_dir);
 	  ck_free(modules_dir);
 	  if (!pt_options) usage(argv[0]);
@@ -7943,12 +7949,7 @@ int main(int argc, char** argv) {
 	  extract_client_params(argc, argv);
   }
   optind++;
-
-  setup_signal_handlers();
-  check_asan_opts();
-
-  if (sync_id) fix_up_sync();
-
+  
   if (!strcmp(in_dir, out_dir))
     FATAL("Input and output directories can't be the same");
 
