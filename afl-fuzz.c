@@ -470,64 +470,69 @@ static void bind_to_free_cpu(void) {
     return;
   }
 
-  ACTF("Checking CPU core loadout...");
+  if (!cpu_aff) {
+    ACTF("Checking CPU core loadout...");
 
-  /* Introduce some jitter, in case multiple AFL tasks are doing the same
-  thing at the same time... */
+    /* Introduce some jitter, in case multiple AFL tasks are doing the same
+    thing at the same time... */
 
-  srand(GetTickCount() + GetCurrentProcessId());
-  Sleep(R(1000) * 3);
+    srand(GetTickCount() + GetCurrentProcessId());
+    Sleep(R(1000) * 3);
 
-  process_snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-  if (process_snap == INVALID_HANDLE_VALUE) {
-    FATAL("Failed to create snapshot");
-  }
+    process_snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (process_snap == INVALID_HANDLE_VALUE) {
+      FATAL("Failed to create snapshot");
+    }
 
-  process_entry.dwSize = sizeof(PROCESSENTRY32);
-  if (!Process32First(process_snap, &process_entry)) {
+    process_entry.dwSize = sizeof(PROCESSENTRY32);
+    if (!Process32First(process_snap, &process_entry)) {
+      CloseHandle(process_snap);
+      FATAL("Failed to enumerate processes");
+    }
+
+    do {
+      unsigned long cpu_idx = 0;
+      u64 affinity = get_process_affinity(process_entry.th32ProcessID);
+
+      if ((affinity == 0) || (count_mask_bits(affinity) > 1)) continue;
+
+      cpu_idx = get_bit_idx(affinity);
+      cpu_used[cpu_idx] = 1;
+    } while (Process32Next(process_snap, &process_entry));
+
     CloseHandle(process_snap);
-    FATAL("Failed to enumerate processes");
+
+    /* If the user only uses subset of the core, prefer non-sequential cores
+       to avoid pinning two hyper threads of the same core */
+    for(i = 0; i < cpu_core_count; i += 2) if (!cpu_used[i]) break;
+
+    /* Fallback to the sequential scan */
+    if (i >= cpu_core_count) {
+      for(i = 0; i < cpu_core_count; i++) if (!cpu_used[i]) break;
+    }
+
+    if (i == cpu_core_count) {
+      SAYF("\n" cLRD "[-] " cRST
+      "Uh-oh, looks like all %u CPU cores on your system are allocated to\n"
+      "    other instances of afl-fuzz (or similar CPU-locked tasks). Starting\n"
+      "    another fuzzer on this machine is probably a bad plan, but if you are\n"
+      "    absolutely sure, you can set AFL_NO_AFFINITY and try again.\n",
+      cpu_core_count);
+
+      FATAL("No more free CPU cores");
+
+    }
+
+    OKF("Found a free CPU core, binding to #%u.", i);
+
+    cpu_aff = 1ULL << i;
   }
 
-  do {
-    unsigned long cpu_idx = 0;
-    u64 affinity = get_process_affinity(process_entry.th32ProcessID);
-
-    if ((affinity == 0) || (count_mask_bits(affinity) > 1)) continue;
-
-    cpu_idx = get_bit_idx(affinity);
-    cpu_used[cpu_idx] = 1;
-  } while (Process32Next(process_snap, &process_entry));
-
-  CloseHandle(process_snap);
-
-  /* If the user only uses subset of the core, prefer non-sequential cores
-	 to avoid pinning two hyper threads of the same core */
-  for(i = 0; i < cpu_core_count; i += 2) if (!cpu_used[i]) break;
-
-  /* Fallback to the sequential scan */
-  if (i >= cpu_core_count) {
-	for(i = 0; i < cpu_core_count; i++) if (!cpu_used[i]) break;
-  }
-
-  if (i == cpu_core_count) {
-    SAYF("\n" cLRD "[-] " cRST
-    "Uh-oh, looks like all %u CPU cores on your system are allocated to\n"
-    "    other instances of afl-fuzz (or similar CPU-locked tasks). Starting\n"
-    "    another fuzzer on this machine is probably a bad plan, but if you are\n"
-    "    absolutely sure, you can set AFL_NO_AFFINITY and try again.\n",
-    cpu_core_count);
-
-    FATAL("No more free CPU cores");
-
-  }
-
-  OKF("Found a free CPU core, binding to #%u.", i);
-
-  cpu_aff = 1ULL << i;
   if (!SetProcessAffinityMask(GetCurrentProcess(), (DWORD_PTR)cpu_aff)) {
     FATAL("Failed to set process affinity");
   }
+
+  OKF("Process affinity is set to %I64x.\n", cpu_aff);
 }
 
 
@@ -7045,7 +7050,8 @@ static void usage(u8* argv0) {
 
        "Execution control settings:\n\n"
 
-       "  -f file       - location read by the fuzzed program (stdin)\n\n"
+       "  -f file       - location read by the fuzzed program (stdin)\n"
+       "  -c cpu        - the CPU to run the fuzzed program\n\n"
  
        "Fuzzing behavior settings:\n\n"
 
@@ -7717,7 +7723,7 @@ int main(int argc, char** argv) {
   dynamorio_dir = NULL;
   client_params = NULL;
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:I:T:dYnCB:S:M:x:QD:b:l:pP")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:t:I:T:dYnCB:S:M:x:QD:b:l:pPc:")) > 0)
 
     switch (opt) {
       case 'i':
@@ -7922,6 +7928,20 @@ int main(int argc, char** argv) {
 #endif
 
 		  break;
+
+      case 'c':
+        if (cpu_aff) {
+          FATAL("Multiple -c options not supported");
+        }
+        else {
+          int cpunum = 0;
+
+          if (sscanf(optarg, "%d", &cpunum) < 1) FATAL("Bad syntax used for -c");
+
+          cpu_aff = 1ULL << cpunum;
+        }
+
+        break;
 
       default:
 
