@@ -2526,11 +2526,13 @@ static int is_child_running() {
 typedef int (APIENTRY* dll_run)(char*, long, int);
 typedef int (APIENTRY* dll_init)();
 typedef u8 (APIENTRY* dll_run_target)(char**, u32, char*, u32);
+typedef void (APIENTRY *dll_write_to_testcase)(char*, s32, const void*, u32);
 
 // custom server functions
 dll_run dll_run_ptr = NULL;
 dll_init dll_init_ptr = NULL;
 dll_run_target dll_run_target_ptr = NULL;
+dll_write_to_testcase dll_write_to_testcase_ptr = NULL;
 
 char *get_test_case(long *fsize)
 {
@@ -2681,6 +2683,11 @@ static u8 run_target(char** argv, u32 timeout) {
    truncated. */
 
 static void write_to_testcase(void* mem, u32 len) {
+
+  if (dll_write_to_testcase_ptr) {
+      dll_write_to_testcase_ptr(out_file, out_fd, mem, len);
+      return;
+  }
 
   s32 fd = out_fd;
 
@@ -7690,6 +7697,10 @@ void load_custom_library(const char *libname)
   // Get pointer to user-defined run_target function using GetProcAddress:
   dll_run_target_ptr = (dll_run_target)GetProcAddress(hLib, "dll_run_target");
   SAYF("dll_run_target %s defined.\n", dll_run_target_ptr ? "is" : "isn't");
+
+  // Get pointer to user-defined write_to_testcase function using GetProcAddress:
+  dll_write_to_testcase_ptr = (dll_write_to_testcase)GetProcAddress(hLib, "dll_write_to_testcase");
+  SAYF("dll_write_to_testcase %s defined.\n", dll_write_to_testcase_ptr ? "is" : "isn't");
 
   SAYF("Sucessfully loaded and initalized\n");
 }
