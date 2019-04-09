@@ -2548,6 +2548,9 @@ char *get_test_case(long *fsize)
   char *buf = malloc(*fsize);
   ck_read(fd, buf, *fsize, "input file");
 
+  if(out_file != NULL)
+    close(fd);
+
   return buf;
 }
 
