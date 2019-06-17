@@ -80,13 +80,15 @@ WinAFL has been successfully used to identify bugs in Windows software, such as
 DynamoRIO sources or download DynamoRIO Windows binary package from
 https://github.com/DynamoRIO/dynamorio/wiki/Downloads
 
-2. Open Visual Studio Command Prompt (or Visual Studio x64 Win64 Command Prompt
+2. If you are building with Intel PT support, pull third party dependencies by running `git submodule update --init --recursive` from the WinAFL source directory
+
+3. Open Visual Studio Command Prompt (or Visual Studio x64 Win64 Command Prompt
 if you want a 64-bit build). Note that you need a 64-bit winafl.dll build if
 you are fuzzing 64-bit targets and vice versa.
 
-3. Go to the directory containing the source
+4. Go to the directory containing the source
 
-4. Type the following commands. Modify the -DDynamoRIO_DIR flag to point to the
+5. Type the following commands. Modify the -DDynamoRIO_DIR flag to point to the
 location of your DynamoRIO cmake files (either full path or relative to the
 source directory).
 
