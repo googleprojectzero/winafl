@@ -12,7 +12,9 @@ if (${INTELPT})
     add_definitions(-DINTELPT)
 endif()
 
-add_subdirectory(third_party/processor-trace)
+if (${INTELPT})
+  add_subdirectory(third_party/processor-trace)
+endif()
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
