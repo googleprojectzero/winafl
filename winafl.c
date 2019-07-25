@@ -664,7 +664,7 @@ event_module_load(void *drcontext, const module_data_t *info, bool loaded)
         dr_fprintf(winafl_data.log, "Module loaded, %s\n", module_name);
 
     if(options.fuzz_module[0]) {
-        if(strcmp(module_name, options.fuzz_module) == 0) {
+        if(_stricmp(module_name, options.fuzz_module) == 0) {
             if(options.fuzz_offset) {
                 to_wrap = info->start + options.fuzz_offset;
             } else {
@@ -691,14 +691,14 @@ event_module_load(void *drcontext, const module_data_t *info, bool loaded)
 			}
         }
 
-        if (options.debug_mode && (strcmp(module_name, "WS2_32.dll") == 0)) {
+        if (options.debug_mode && (_stricmp(module_name, "WS2_32.dll") == 0)) {
             to_wrap = (app_pc)dr_get_proc_address(info->handle, "recvfrom");
             bool result = drwrap_wrap(to_wrap, recvfrom_interceptor, NULL);
             to_wrap = (app_pc)dr_get_proc_address(info->handle, "recv");
             result = drwrap_wrap(to_wrap, recv_interceptor, NULL);
         }
 
-        if(options.debug_mode && (strcmp(module_name, "KERNEL32.dll") == 0)) {
+        if(options.debug_mode && (_stricmp(module_name, "KERNEL32.dll") == 0)) {
             to_wrap = (app_pc)dr_get_proc_address(info->handle, "CreateFileW");
             drwrap_wrap(to_wrap, createfilew_interceptor, NULL);
             to_wrap = (app_pc)dr_get_proc_address(info->handle, "CreateFileA");
