@@ -180,16 +180,7 @@ Add the following option to the winafl arguments:
 Example usage on the supplied test.exe:
 
 ```
-afl-fuzz.exe -i in -o out^
--D <dynamorio bin path>^
--t 100+^
---^
--coverage_module test.exe^
--fuzz_iterations 5000^
--target_module test.exe -target_offset 0x1000^
--persistence_mode in_app^
---^
-test.exe @@ loop
+afl-fuzz.exe -i in -o out -D <dynamorio bin path> -t 100+ -- -coverage_module test.exe -fuzz_iterations 5000 -target_module test.exe -target_offset 0x1000 -persistence_mode in_app -- test.exe @@ loop
 ```
 
 
