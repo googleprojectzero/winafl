@@ -740,7 +740,7 @@ event_exit(void)
             dr_fprintf(winafl_data.log, "WARNING: Target function was never called. Incorrect target_offset?\n");
         } else if(debug_data.post_handler_called == 0 && options.persistence_mode != in_app) {
             dr_fprintf(winafl_data.log, "WARNING: Post-fuzz handler was never reached. Did the target function return normally?\n");
-        else if(debug_data.pre_hanlder_called == 1 && options.persistence_mode == in_app)
+        } else if(debug_data.pre_hanlder_called == 1 && options.persistence_mode == in_app) {
             dr_fprintf(winafl_data.log, "WARNING: Only hit pre_loop_start_handler once, Is your target function in a loop?\n");
         } else {
             dr_fprintf(winafl_data.log, "Everything appears to be running normally.\n");
