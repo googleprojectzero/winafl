@@ -83,7 +83,7 @@ typedef struct _winafl_option_t {
      */
     bool nudge_kills;
     bool debug_mode;
-	int persistence_mode;
+	  int persistence_mode;
     int coverage_kind;
     char logdir[MAXIMUM_PATH];
     target_module_t *target_modules;
@@ -481,7 +481,7 @@ pre_loop_start_handler(void *wrapcxt, INOUT void **user_data)
 	}
 	else {
 		debug_data.pre_hanlder_called++;
-		dr_fprintf(winafl_data.log, "In pre_loop_start_handler\n");
+		dr_fprintf(winafl_data.log, "In pre_loop_start_handler: %d\n", debug_data.pre_hanlder_called);
 	}
 
 	memset(winafl_data.afl_area, 0, MAP_SIZE);
@@ -738,8 +738,10 @@ event_exit(void)
     if(options.debug_mode) {
         if(debug_data.pre_hanlder_called == 0) {
             dr_fprintf(winafl_data.log, "WARNING: Target function was never called. Incorrect target_offset?\n");
-        } else if(debug_data.post_handler_called == 0) {
+        } else if(debug_data.post_handler_called == 0 && options.persistence_mode != in_app) {
             dr_fprintf(winafl_data.log, "WARNING: Post-fuzz handler was never reached. Did the target function return normally?\n");
+        else if(debug_data.pre_hanlder_called == 1 && options.persistence_mode == in_app)
+            dr_fprintf(winafl_data.log, "WARNING: Only hit pre_loop_start_handler once, Is your target function in a loop?\n");
         } else {
             dr_fprintf(winafl_data.log, "Everything appears to be running normally.\n");
         }
