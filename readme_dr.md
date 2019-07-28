@@ -170,10 +170,17 @@ This mode works as following:
 3. Your target runs until hitting the target function again.
 4. The afl server stops instrumenting current cycle and starts a new one.
 
-usage: add the following option to the winafl arguments:
--persistence_mode in_app
+Usage:
 
-example usage on the supplied test.exe:
-afl-fuzz.exe -i in -o out -D <dynamorio bin path> -t 100+ -- -coverage_module test.exe -fuzz_iterations 5000 -target_module test.exe -target_offset 0x1000 -nargs 2 -persistence_mode in_app -- test.exe @@ loop
+Add the following option to the winafl arguments:
+`-persistence_mode in_app`
+
+`-nargs` isn't necessary in this mode.
+
+Example usage on the supplied test.exe:
+
+```
+afl-fuzz.exe -i in -o out -D <dynamorio bin path> -t 100+ -- -coverage_module test.exe -fuzz_iterations 5000 -target_module test.exe -target_offset 0x1000 -persistence_mode in_app -- test.exe @@ loop
+```
 
 
