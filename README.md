@@ -123,7 +123,7 @@ The following cmake configuration options are supported:
 
  - `-DUSE_COLOR=1` - color support (Windows 10 Anniversary edition or higher)
 
- - `-DUSE_DRSYSMS=1` - Drsyms support (use symbols when available to obtain
+ - `-DUSE_DRSYMS=1` - Drsyms support (use symbols when available to obtain
    -target_offset from -target_method). Enabling this has been known to cause
    issues on Windows 10 v1809, though there are workarounds,
    see https://github.com/googleprojectzero/winafl/issues/145
