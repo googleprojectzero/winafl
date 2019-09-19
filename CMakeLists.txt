@@ -128,9 +128,20 @@ if (${INTELPT})
 
 endif()
 
-add_executable(afl-fuzz
+if (NOT "${PYTHON_DIR}" STREQUAL "")
+  include_directories(${PYTHON_DIR}/include)
+
+  add_executable(afl-fuzz
   ${AFL_FUZZ_SOURCES}
   )
+  target_link_libraries(afl-fuzz "${PYTHON_DIR}/libs/python27.lib")
+
+  target_compile_definitions(afl-fuzz PUBLIC -DUSE_PYTHON)
+else()
+  add_executable(afl-fuzz
+    ${AFL_FUZZ_SOURCES}
+    )
+endif()
 
 if (${INTELPT})
 
