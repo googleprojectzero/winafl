@@ -5759,13 +5759,21 @@ static u8 fuzz_one(char** argv) {
      testing in earlier, resumed runs (passed_det). */
 
   if (skip_deterministic || queue_cur->was_fuzzed || queue_cur->passed_det)
+#ifdef USE_PYTHON
+    goto python_stage;
+#else
     goto havoc_stage;
+#endif
 
   /* Skip deterministic fuzzing if exec path checksum puts this out of scope
      for this master instance. */
 
   if (master_max && (queue_cur->exec_cksum % master_max) != master_id - 1)
+#ifdef USE_PYTHON
+    goto python_stage;
+#else
     goto havoc_stage;
+#endif
 
   doing_det = 1;
 
@@ -7389,7 +7397,11 @@ retry_splicing:
     out_buf = ck_alloc_nozero(len);
     memcpy(out_buf, in_buf, len);
 
+#ifdef USE_PYTHON
+    goto python_stage;
+#else
     goto havoc_stage;
+#endif
 
   }
 
