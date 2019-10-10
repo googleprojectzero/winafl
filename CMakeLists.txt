@@ -30,7 +30,7 @@ add_executable(test_netmode test_netmode.cpp)
 
 add_executable(test_servermode test_simple_winsock_client.cpp)
 
-if(NOT "${CMAKE_GENERATOR}" MATCHES "(Win64)")
+if(NOT ("${CMAKE_GENERATOR}" MATCHES "(Win64)" OR "${CMAKE_GENERATOR_PLATFORM}" MATCHES "(64)"))
 
   project(test_static)
 
