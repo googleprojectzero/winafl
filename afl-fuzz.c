@@ -81,9 +81,13 @@ enum {
 PyObject *py_module;
 PyObject* py_functions[PY_FUNC_COUNT];
 
-  #define PYTHON_SUPPORT \
+#ifdef PYTHON2
+#define PYTHON_SUPPORT \
     "Compiled with Python 2.7 module support, see docs/python_mutators.txt\n"
-
+#else
+#define PYTHON_SUPPORT \
+    "Compiled with Python 3 module support, see docs/python_mutators.txt\n"
+#endif
 #else
   #define PYTHON_SUPPORT ""
 #endif
@@ -386,7 +390,11 @@ int init_py() {
 
   if (module_name) {
 
+#ifdef PYTHON2
     PyObject* py_name = PyString_FromString(module_name);
+#else
+    PyObject* py_name = PyUnicode_FromString(module_name);
+#endif
 
     py_module = PyImport_Import(py_name);
     Py_DECREF(py_name);
@@ -462,7 +470,11 @@ int init_py() {
 
       /* Provide the init function a seed for the Python RNG */
       py_args = PyTuple_New(1);
+#ifdef PYTHON2
       py_value = PyInt_FromLong(UR(0xFFFFFFFF));
+#else
+      py_value = PyLong_FromLong(UR(0xFFFFFFFF));
+#endif
       if (!py_value) {
 
         Py_DECREF(py_args);
@@ -623,7 +635,11 @@ u32 init_trim_py(char* buf, size_t buflen) {
 
   if (py_value != NULL) {
 
+#ifdef PYTHON2
     u32 retcnt = PyInt_AsLong(py_value);
+#else
+    u32 retcnt = PyLong_AsLong(py_value);
+#endif
     Py_DECREF(py_value);
     return retcnt;
 
@@ -657,7 +673,11 @@ u32 post_trim_py(char success) {
 
   if (py_value != NULL) {
 
+#ifdef PYTHON2
     u32 retcnt = PyInt_AsLong(py_value);
+#else
+    u32 retcnt = PyLong_AsLong(py_value);
+#endif
     Py_DECREF(py_value);
     return retcnt;
 

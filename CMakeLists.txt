@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 2.6)
 
+if (${USE_PYTHON2})
+    add_definitions(-DUSE_PYTHON2)
+endif()
+
 if (${USE_COLOR})
     add_definitions(-DUSE_COLOR)
 endif()
@@ -134,9 +138,13 @@ if (NOT "${PYTHON_DIR}" STREQUAL "")
   add_executable(afl-fuzz
   ${AFL_FUZZ_SOURCES}
   )
-  target_link_libraries(afl-fuzz "${PYTHON_DIR}/libs/python27.lib")
-
-  target_compile_definitions(afl-fuzz PUBLIC -DUSE_PYTHON)
+  if(${USE_PYTHON2})
+    target_link_libraries(afl-fuzz "${PYTHON_DIR}/libs/python27.lib")
+    target_compile_definitions(afl-fuzz PUBLIC -DUSE_PYTHON -DUSE_PYTHON2)
+  else()
+    target_link_libraries(afl-fuzz "${PYTHON_DIR}/libs/python3.lib")
+    target_compile_definitions(afl-fuzz PUBLIC -DUSE_PYTHON)
+  endif()
 else()
   add_executable(afl-fuzz
     ${AFL_FUZZ_SOURCES}
