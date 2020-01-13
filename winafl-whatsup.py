@@ -146,6 +146,7 @@ def main():
 
                 print("")
         except:
+            print("error in parsing fuzzer_stat: {}, seems to be corrupt?".format(stats_path))
             continue
 
     total_days = int(total_time / 60 / 60 / 24)
