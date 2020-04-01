@@ -187,19 +187,20 @@ event_soft_kill(process_id_t pid, int exit_code)
  * Event Callbacks
  */
 
-char ReadCommandFromPipe()
+int ReadCommandFromPipe(char* result)
 {
 	DWORD num_read;
-	char result;
-	ReadFile(pipe, &result, 1, &num_read, NULL);
-	return result;
+	//char result[5];
+	ReadFile(pipe, result, 5, &num_read, NULL);
+	return 0;
 }
 
-void WriteCommandToPipe(char cmd)
+void WriteCommandToPipe(char* cmd)
 {
 	DWORD num_written;
-	WriteFile(pipe, &cmd, 1, &num_written, NULL);
+	WriteFile(pipe, cmd, 5, &num_written, NULL);
 }
+
 
 static void
 dump_winafl_data()
@@ -210,6 +211,12 @@ dump_winafl_data()
 static bool
 onexception(void *drcontext, dr_exception_t *excpt) {
     DWORD exception_code = excpt->record->ExceptionCode;
+	char pipeCommand[5];
+	memset(pipeCommand,0,5);
+	pipeCommand[0] = 'C';
+	memcpy(pipeCommand+1, &exception_code,4);
+	
+//	DR_ASSERT_MSG(false, exception_code);
 
     if(options.debug_mode)
         dr_fprintf(winafl_data.log, "Exception caught: %x\n", exception_code);
@@ -225,7 +232,7 @@ onexception(void *drcontext, dr_exception_t *excpt) {
             if(options.debug_mode) {
                 dr_fprintf(winafl_data.log, "crashed\n");
             } else {
-				WriteCommandToPipe('C');
+				WriteCommandToPipe(pipeCommand);
             }
             dr_exit_process(1);
     }
@@ -452,10 +459,13 @@ static void
 pre_loop_start_handler(void *wrapcxt, INOUT void **user_data)
 {
 	void *drcontext = drwrap_get_drcontext(wrapcxt);
+	char WriteCommand[5];
+	memset(WriteCommand, 0, 5);
 
 	if (!options.debug_mode) {
 		//let server know we finished a cycle, redundunt on first cycle.
-		WriteCommandToPipe('K');
+		WriteCommand[0] = 'K';
+		WriteCommandToPipe(WriteCommand);
 
 		if (fuzz_target.iteration == options.fuzz_iterations) {
 			dr_exit_process(0);
@@ -463,18 +473,22 @@ pre_loop_start_handler(void *wrapcxt, INOUT void **user_data)
 		fuzz_target.iteration++;
 
 		//let server know we are starting a new cycle
-		WriteCommandToPipe('P'); 
+		WriteCommand[0] = 'P';
+		WriteCommandToPipe(WriteCommand); 
 
 		//wait for server acknowledgement for cycle start
-		char command = ReadCommandFromPipe(); 
+		char ReadCommand[5];
+		memset(ReadCommand,0,5);
 
-		if (command != 'F') {
-			if (command == 'Q') {
+	 ReadCommandFromPipe(ReadCommand);
+
+		if (ReadCommand[0] != 'F') {
+			if (ReadCommand[0] == 'Q') {
 				dr_exit_process(0);
 			}
 			else {
 				char errorMessage[] = "unrecognized command received over pipe: ";
-				errorMessage[sizeof(errorMessage)-2] = command;
+				errorMessage[sizeof(errorMessage)-2] = ReadCommand[0];
 				DR_ASSERT_MSG(false, errorMessage);
 			}
 		}
@@ -496,9 +510,12 @@ pre_loop_start_handler(void *wrapcxt, INOUT void **user_data)
 static void
 pre_fuzz_handler(void *wrapcxt, INOUT void **user_data)
 {
-    char command = 0;
+    char ReadCommand[5];
+	char WriteCommand[5];
     int i;
     void *drcontext;
+	memset(ReadCommand, 0, 5);
+	memset(WriteCommand, 0, 5);
 
     app_pc target_to_fuzz = drwrap_get_func(wrapcxt);
     dr_mcontext_t *mc = drwrap_get_mcontext_ex(wrapcxt, DR_MC_ALL);
@@ -508,11 +525,12 @@ pre_fuzz_handler(void *wrapcxt, INOUT void **user_data)
     fuzz_target.func_pc = target_to_fuzz;
 
     if(!options.debug_mode) {
-		WriteCommandToPipe('P');
-		command = ReadCommandFromPipe();
+		WriteCommand[0] = 'P';
+		WriteCommandToPipe(WriteCommand);
+		ReadCommandFromPipe(ReadCommand);
 
-        if(command != 'F') {
-            if(command == 'Q') {
+        if(ReadCommand[0] != 'F') {
+            if(ReadCommand[0] == 'Q') {
                 dr_exit_process(0);
             } else {
                 DR_ASSERT_MSG(false, "unrecognized command received over pipe");
@@ -546,11 +564,14 @@ pre_fuzz_handler(void *wrapcxt, INOUT void **user_data)
 static void
 post_fuzz_handler(void *wrapcxt, void *user_data)
 {
+	char WriteCommand[5];
     dr_mcontext_t *mc;
     mc = drwrap_get_mcontext(wrapcxt);
+	memset(WriteCommand,0,5);
 
     if(!options.debug_mode) {
-		WriteCommandToPipe('K');
+		WriteCommand[0] = 'K';
+		WriteCommandToPipe(WriteCommand);
     } else {
         debug_data.post_handler_called++;
         dr_fprintf(winafl_data.log, "In post_fuzz_handler\n");
