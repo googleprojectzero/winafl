@@ -2475,35 +2475,35 @@ DWORD WINAPI watchdog_timer( LPVOID lpParam ) {
 	}
 }
 
-char ReadCommandFromPipe(u32 timeout)
+int ReadCommandFromPipe(u32 timeout,char *result)
 {
 	DWORD num_read;
-	char result = 0;
+	//char result = 0;
 	if (!is_child_running())
 	{
 		return 0;
 	}
 
-	if (ReadFile(pipe_handle, &result, 1, &num_read, &pipe_overlapped) || GetLastError() == ERROR_IO_PENDING)
+	if (ReadFile(pipe_handle, result, 5, &num_read, &pipe_overlapped) || GetLastError() == ERROR_IO_PENDING)
 	{
 		//ACTF("ReadFile success or GLE IO_PENDING", result);
 		if (WaitForSingleObject(pipe_overlapped.hEvent, timeout) != WAIT_OBJECT_0) {
 			// took longer than specified timeout or other error - cancel read
 			CancelIo(pipe_handle);
 			WaitForSingleObject(pipe_overlapped.hEvent, INFINITE); //wait for cancelation to finish properly.
-			result = 0;
+			result[0] = 0;
 		}
 	}
 	//ACTF("ReadFile GLE %d", GetLastError());
 	//ACTF("read from pipe '%c'", result);
-	return result;
+	return 0;
 }
 
-void WriteCommandToPipe(char cmd)
+void WriteCommandToPipe(char* cmd)
 {
 	DWORD num_written;
 	//ACTF("write to pipe '%c'", cmd);
-	WriteFile(pipe_handle, &cmd, 1, &num_written, &pipe_overlapped);
+	WriteFile(pipe_handle, cmd, 5, &num_written, &pipe_overlapped);
 }
 
 static void setup_watchdog_timer() {
@@ -2575,7 +2575,7 @@ static int process_test_case_into_dll(int fuzz_iterations)
 /* Execute target application, monitoring for timeouts. Return status
    information. The called program will update trace_bits[]. */
 
-static u8 run_target(char** argv, u32 timeout) {
+static DWORD run_target(char** argv, u32 timeout) {
 	total_execs++;
 
     if (dll_run_target_ptr) {
@@ -2590,7 +2590,10 @@ static u8 run_target(char** argv, u32 timeout) {
 
   //todo watchdog timer to detect hangs
   DWORD num_read, dwThreadId;
-  char result = 0;
+  char result[5];
+  memset(result, 0, 5);
+
+  DWORD ret_exception_code=0;
 
   if(sinkhole_stds && devnul_handle == INVALID_HANDLE_VALUE) {
     devnul_handle = CreateFile(
@@ -2631,13 +2634,13 @@ static u8 run_target(char** argv, u32 timeout) {
 	  watchdog_timeout_time = get_cur_time() + timeout;
   }
   watchdog_enabled = 1;
-  result = ReadCommandFromPipe(timeout);
-  if (result == 'K')
+  ReadCommandFromPipe(timeout,result);
+  if (result[0] == 'K')
   {
 	  //a workaround for first cycle in app persistent mode
-	  result = ReadCommandFromPipe(timeout);
+	 ReadCommandFromPipe(timeout,result);
   }
-  if (result == 0) 
+  if (result[0] == 0) 
   {
 	  //saves us from getting stuck in corner case.
 	  MemoryBarrier();
@@ -2646,13 +2649,16 @@ static u8 run_target(char** argv, u32 timeout) {
       destroy_target_process(0);
       return FAULT_TMOUT;
   }
-  if (result != 'P')
+  if (result[0] != 'P')
   {
-	  FATAL("Unexpected result from pipe! expected 'P', instead received '%c'\n", result);
+	  FATAL("Unexpected result from pipe! expected 'P', instead received '%c'\n", result[0]);
   }
-  WriteCommandToPipe('F');
+  char command[5];
+  memset(command, 0, 5);
+command[0] = 'F';
+  WriteCommandToPipe(command);
 
-  result = ReadCommandFromPipe(timeout); //no need to check for "error(0)" since we are exiting anyway
+  ReadCommandFromPipe(timeout,result); //no need to check for "error(0)" since we are exiting anyway
   //ACTF("result: '%c'", result);
   MemoryBarrier();
   watchdog_enabled = 0;
@@ -2669,11 +2675,23 @@ static u8 run_target(char** argv, u32 timeout) {
 	  destroy_target_process(2000);
   }
 
-  if (result == 'K') return FAULT_NONE;
+  if (result[0] == 'K') return FAULT_NONE;
 
-  if (result == 'C') {
+  if (result[0] == 'C') {
+	  memcpy(&ret_exception_code, result + 1, 4); //hardik
+	  /*just to check excpetion code and some debugging
+
+	  ACTF("exception code:%lu", ret_exception_code);
+	  if (ret_exception_code == EXCEPTION_ACCESS_VIOLATION) {
+		  exit(0);
+	  }
+	  */
+	  /*this is the old code which return only FAULT_CRASH, replacing it with exception code
 	  destroy_target_process(2000);
 	  return FAULT_CRASH;
+	 */
+	  destroy_target_process(2000);
+	  return ret_exception_code;	
   }
 
   destroy_target_process(0);
@@ -2786,7 +2804,7 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
     write_to_testcase(use_mem, q->len);
 
     fault = run_target(argv, use_tmout);
-
+	//ACTF("fault code '%d'...", fault);
     /* stop_soon is set by the handler for Ctrl+C. When it's pressed,
        we want to bail out quickly. */
 
@@ -3299,14 +3317,14 @@ static void write_crash_readme(void) {
    save or queue the input test case for further analysis if so. Returns 1 if
    entry is saved, 0 otherwise. */
 
-static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
+static u8 save_if_interesting(char** argv, void* mem, u32 len, DWORD fault) {
 
   u8  *fn = "";
   u8  hnb;
   s32 fd;
   u8  keeping = 0, res;
-
-  if (fault == crash_mode) {
+  
+   if (fault == crash_mode) {
 
     /* Keep only if there are new bits in the map, add to queue for
        future fuzzing, etc. */
@@ -3412,7 +3430,7 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 
       break;
 
-    case FAULT_CRASH:
+    case EXCEPTION_ACCESS_VIOLATION:
 
       /* This is handled in a manner roughly similar to timeouts,
          except for slightly different limits and no need to re-run test
@@ -3443,7 +3461,7 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 
 #else
 
-      fn = alloc_printf("%s\\crashes\\id_%06llu_%02u", out_dir, unique_crashes,
+      fn = alloc_printf("%s\\crashes\\id_%06llu_%02u_EXCEPTION_ACCESS_VIOLATION", out_dir, unique_crashes,
                         kill_signal);
 
 #endif /* ^!SIMPLE_FILES */
@@ -3455,7 +3473,312 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
       last_crash_execs = total_execs;
 
       break;
+	case EXCEPTION_ILLEGAL_INSTRUCTION:
 
+		/* This is handled in a manner roughly similar to timeouts,
+		   except for slightly different limits and no need to re-run test
+		   cases. */
+
+		total_crashes++;
+
+		if (unique_crashes >= KEEP_UNIQUE_CRASH) return keeping;
+
+		if (!dumb_mode) {
+
+#ifdef _WIN64
+			simplify_trace((u64*)trace_bits);
+#else
+			simplify_trace((u32*)trace_bits);
+#endif /* ^_WIN64 */
+
+			if (!has_new_bits(virgin_crash)) return keeping;
+
+		}
+
+		if (!unique_crashes) write_crash_readme();
+
+#ifndef SIMPLE_FILES
+
+		fn = alloc_printf("%s\\crashes\\id:%06llu,sig:%02u,%s", out_dir,
+			unique_crashes, kill_signal, describe_op(0));
+
+#else
+
+		fn = alloc_printf("%s\\crashes\\id_%06llu_%02u_EXCEPTION_ILLEGAL_INSTRUCTION", out_dir, unique_crashes,
+			kill_signal);
+
+#endif /* ^!SIMPLE_FILES */
+
+		unique_crashes++;
+
+		last_crash_time = get_cur_time();
+
+		last_crash_execs = total_execs;
+
+		break;
+
+	case EXCEPTION_PRIV_INSTRUCTION:
+
+		/* This is handled in a manner roughly similar to timeouts,
+		   except for slightly different limits and no need to re-run test
+		   cases. */
+
+		total_crashes++;
+
+		if (unique_crashes >= KEEP_UNIQUE_CRASH) return keeping;
+
+		if (!dumb_mode) {
+
+#ifdef _WIN64
+			simplify_trace((u64*)trace_bits);
+#else
+			simplify_trace((u32*)trace_bits);
+#endif /* ^_WIN64 */
+
+			if (!has_new_bits(virgin_crash)) return keeping;
+
+		}
+
+		if (!unique_crashes) write_crash_readme();
+
+#ifndef SIMPLE_FILES
+
+		fn = alloc_printf("%s\\crashes\\id:%06llu,sig:%02u,%s", out_dir,
+			unique_crashes, kill_signal, describe_op(0));
+
+#else
+
+		fn = alloc_printf("%s\\crashes\\id_%06llu_%02u_EXCEPTION_PRIV_INSTRUCTION", out_dir, unique_crashes,
+			kill_signal);
+
+#endif /* ^!SIMPLE_FILES */
+
+		unique_crashes++;
+
+		last_crash_time = get_cur_time();
+
+		last_crash_execs = total_execs;
+
+		break;
+
+	case EXCEPTION_INT_DIVIDE_BY_ZERO:
+
+		/* This is handled in a manner roughly similar to timeouts,
+		   except for slightly different limits and no need to re-run test
+		   cases. */
+
+		total_crashes++;
+
+		if (unique_crashes >= KEEP_UNIQUE_CRASH) return keeping;
+
+		if (!dumb_mode) {
+
+#ifdef _WIN64
+			simplify_trace((u64*)trace_bits);
+#else
+			simplify_trace((u32*)trace_bits);
+#endif /* ^_WIN64 */
+
+			if (!has_new_bits(virgin_crash)) return keeping;
+
+		}
+
+		if (!unique_crashes) write_crash_readme();
+
+#ifndef SIMPLE_FILES
+
+		fn = alloc_printf("%s\\crashes\\id:%06llu,sig:%02u,%s", out_dir,
+			unique_crashes, kill_signal, describe_op(0));
+
+#else
+
+		fn = alloc_printf("%s\\crashes\\id_%06llu_%02u_EXCEPTION_INT_DIVIDE_BY_ZERO", out_dir, unique_crashes,
+			kill_signal);
+
+#endif /* ^!SIMPLE_FILES */
+
+		unique_crashes++;
+
+		last_crash_time = get_cur_time();
+
+		last_crash_execs = total_execs;
+
+		break;
+
+	case STATUS_HEAP_CORRUPTION:
+
+		/* This is handled in a manner roughly similar to timeouts,
+		   except for slightly different limits and no need to re-run test
+		   cases. */
+
+		total_crashes++;
+
+		if (unique_crashes >= KEEP_UNIQUE_CRASH) return keeping;
+
+		if (!dumb_mode) {
+
+#ifdef _WIN64
+			simplify_trace((u64*)trace_bits);
+#else
+			simplify_trace((u32*)trace_bits);
+#endif /* ^_WIN64 */
+
+			if (!has_new_bits(virgin_crash)) return keeping;
+
+		}
+
+		if (!unique_crashes) write_crash_readme();
+
+#ifndef SIMPLE_FILES
+
+		fn = alloc_printf("%s\\crashes\\id:%06llu,sig:%02u,%s", out_dir,
+			unique_crashes, kill_signal, describe_op(0));
+
+#else
+
+		fn = alloc_printf("%s\\crashes\\id_%06llu_%02u_STATUS_HEAP_CORRUPTION", out_dir, unique_crashes,
+			kill_signal);
+
+#endif /* ^!SIMPLE_FILES */
+
+		unique_crashes++;
+
+		last_crash_time = get_cur_time();
+
+		last_crash_execs = total_execs;
+
+		break;
+	case EXCEPTION_STACK_OVERFLOW:
+
+		/* This is handled in a manner roughly similar to timeouts,
+		   except for slightly different limits and no need to re-run test
+		   cases. */
+
+		total_crashes++;
+
+		if (unique_crashes >= KEEP_UNIQUE_CRASH) return keeping;
+
+		if (!dumb_mode) {
+
+#ifdef _WIN64
+			simplify_trace((u64*)trace_bits);
+#else
+			simplify_trace((u32*)trace_bits);
+#endif /* ^_WIN64 */
+
+			if (!has_new_bits(virgin_crash)) return keeping;
+
+		}
+
+		if (!unique_crashes) write_crash_readme();
+
+#ifndef SIMPLE_FILES
+
+		fn = alloc_printf("%s\\crashes\\id:%06llu,sig:%02u,%s", out_dir,
+			unique_crashes, kill_signal, describe_op(0));
+
+#else
+
+		fn = alloc_printf("%s\\crashes\\id_%06llu_%02u_EXCEPTION_STACK_OVERFLOW", out_dir, unique_crashes,
+			kill_signal);
+
+#endif /* ^!SIMPLE_FILES */
+
+		unique_crashes++;
+
+		last_crash_time = get_cur_time();
+
+		last_crash_execs = total_execs;
+
+		break;
+
+	case STATUS_STACK_BUFFER_OVERRUN:
+
+		/* This is handled in a manner roughly similar to timeouts,
+		   except for slightly different limits and no need to re-run test
+		   cases. */
+
+		total_crashes++;
+
+		if (unique_crashes >= KEEP_UNIQUE_CRASH) return keeping;
+
+		if (!dumb_mode) {
+
+#ifdef _WIN64
+			simplify_trace((u64*)trace_bits);
+#else
+			simplify_trace((u32*)trace_bits);
+#endif /* ^_WIN64 */
+
+			if (!has_new_bits(virgin_crash)) return keeping;
+
+		}
+
+		if (!unique_crashes) write_crash_readme();
+
+#ifndef SIMPLE_FILES
+
+		fn = alloc_printf("%s\\crashes\\id:%06llu,sig:%02u,%s", out_dir,
+			unique_crashes, kill_signal, describe_op(0));
+
+#else
+
+		fn = alloc_printf("%s\\crashes\\id_%06llu_%02u_STATUS_STACK_BUFFER_OVERRUN", out_dir, unique_crashes,
+			kill_signal);
+
+#endif /* ^!SIMPLE_FILES */
+
+		unique_crashes++;
+
+		last_crash_time = get_cur_time();
+
+		last_crash_execs = total_execs;
+
+		break;
+
+	case STATUS_FATAL_APP_EXIT:
+
+		/* This is handled in a manner roughly similar to timeouts,
+		   except for slightly different limits and no need to re-run test
+		   cases. */
+
+		total_crashes++;
+
+		if (unique_crashes >= KEEP_UNIQUE_CRASH) return keeping;
+
+		if (!dumb_mode) {
+
+#ifdef _WIN64
+			simplify_trace((u64*)trace_bits);
+#else
+			simplify_trace((u32*)trace_bits);
+#endif /* ^_WIN64 */
+
+			if (!has_new_bits(virgin_crash)) return keeping;
+
+		}
+
+		if (!unique_crashes) write_crash_readme();
+
+#ifndef SIMPLE_FILES
+
+		fn = alloc_printf("%s\\crashes\\id:%06llu,sig:%02u,%s", out_dir,
+			unique_crashes, kill_signal, describe_op(0));
+
+#else
+
+		fn = alloc_printf("%s\\crashes\\id_%06llu_%02u_STATUS_FATAL_APP_EXIT", out_dir, unique_crashes,
+			kill_signal);
+
+#endif /* ^!SIMPLE_FILES */
+
+		unique_crashes++;
+
+		last_crash_time = get_cur_time();
+
+		last_crash_execs = total_execs;
+
+		break;
     case FAULT_ERROR: FATAL("Unable to execute target application");
 
     default: return keeping;
@@ -3475,7 +3798,6 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
   return keeping;
 
 }
-
 
 /* When resuming, try to find the queue position to start from. This makes sense
    only when resuming, and when we can find the original fuzzer_stats. */
@@ -4770,7 +5092,7 @@ abort_trimming:
 
 static u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
 
-  u8 fault;
+  DWORD fault;
 
   if (post_handler) {
 
@@ -6902,7 +7224,7 @@ static void sync_fuzzers(char** argv) {
 
       if (st.st_size && st.st_size <= MAX_FILE) {
 
-        u8  fault;
+        DWORD  fault;
         u8* mem = malloc(st.st_size);
         read(fd, mem, st.st_size);
 			
