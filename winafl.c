@@ -201,10 +201,10 @@ void WriteCommandToPipe(char cmd)
 	WriteFile(pipe, &cmd, 1, &num_written, NULL);
 }
 
-void WriteDWORDCommandToPipe(char* cmd)
+void WriteDWORDCommandToPipe(DWORD data)
 {
 	DWORD num_written;
-	WriteFile(pipe, cmd, 4, &num_written, NULL);
+	WriteFile(pipe, &data, sizeof(DWORD), &num_written, NULL);
 }
 
 
@@ -217,10 +217,6 @@ dump_winafl_data()
 static bool
 onexception(void *drcontext, dr_exception_t *excpt) {
     DWORD exception_code = excpt->record->ExceptionCode;
-	char pipeCommand[4];
-
-	memset(pipeCommand, 0, 4);
-	memcpy(pipeCommand , &exception_code, 4);
 
     if(options.debug_mode)
         dr_fprintf(winafl_data.log, "Exception caught: %x\n", exception_code);
@@ -237,7 +233,7 @@ onexception(void *drcontext, dr_exception_t *excpt) {
                 dr_fprintf(winafl_data.log, "crashed\n");
             } else {
 				WriteCommandToPipe('C');
-				WriteDWORDCommandToPipe(pipeCommand);
+				WriteDWORDCommandToPipe(exception_code);				
             }
             dr_exit_process(1);
     }
