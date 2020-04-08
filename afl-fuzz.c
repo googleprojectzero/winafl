@@ -2500,28 +2500,31 @@ char ReadCommandFromPipe(u32 timeout)
 	return result;
 }
 
-int ReadDWORDFromPipe(u32 timeout, DWORD *result)
+DWORD ReadDWORDFromPipe(u32 timeout)
 {
 	DWORD num_read;
+	DWORD result = 0;
+
 	//char result = 0;
 	if (!is_child_running())
 	{
 		return 0;
 	}
-
-	if (ReadFile(pipe_handle, result, 4, &num_read, &pipe_overlapped) || GetLastError() == ERROR_IO_PENDING)
-	{
-		//ACTF("ReadFile success or GLE IO_PENDING", result);
-		if (WaitForSingleObject(pipe_overlapped.hEvent, timeout) != WAIT_OBJECT_0) {
-			// took longer than specified timeout or other error - cancel read
-			CancelIo(pipe_handle);
-			WaitForSingleObject(pipe_overlapped.hEvent, INFINITE); //wait for cancelation to finish properly.
-			result[0] = 0;
+		if (ReadFile(pipe_handle, &result, sizeof(DWORD), &num_read, &pipe_overlapped) || GetLastError() == ERROR_IO_PENDING)
+		{
+			//ACTF("ReadFile success or GLE IO_PENDING");
+			if (WaitForSingleObject(pipe_overlapped.hEvent, timeout) != WAIT_OBJECT_0) {
+				// took longer than specified timeout or other error - cancel read
+				CancelIo(pipe_handle);
+				WaitForSingleObject(pipe_overlapped.hEvent, INFINITE); //wait for cancelation to finish properly.
+				result = 0;
+			}
 		}
-	}
-	//ACTF("ReadFile GLE %d", GetLastError());
-	//ACTF("read from pipe '%c'", result);
-	return 0;
+	
+	//ACTF("ReadFile GLE: %d", GetLastError());
+	//ACTF("result: '%lu'\r\n", result);
+	//ACTF("read so far '%lu'\r\n", read_so_far);
+	return result;
 }
 
 void WriteCommandToPipe(char cmd)
@@ -2698,7 +2701,8 @@ static u8 run_target(char** argv, u32 timeout) {
   if (result == 'K') return FAULT_NONE;
 
   if (result == 'C') {
-	  ReadDWORDFromPipe(timeout, &ret_exception_code);
+	  ret_exception_code = ReadDWORDFromPipe(timeout);
+	 // ACTF("destroying target process");
 	  destroy_target_process(2000);
 	  return FAULT_CRASH;
   }
@@ -3516,7 +3520,9 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 
       last_crash_execs = total_execs;
 
-      break;
+	  ck_free(exception_name);
+	
+	  break;
 
     case FAULT_ERROR: FATAL("Unable to execute target application");
 
@@ -4868,7 +4874,7 @@ static u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
   }
 
   /* This handles FAULT_ERROR for us: */
-
+ 
   queued_discovered += save_if_interesting(argv, out_buf, len, fault);
 
   if (!(stage_cur % stats_update_freq) || stage_cur + 1 == stage_max)
