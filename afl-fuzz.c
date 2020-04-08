@@ -2555,7 +2555,7 @@ typedef int (APIENTRY* dll_run)(char*, long, int);
 typedef int (APIENTRY* dll_init)();
 typedef u8 (APIENTRY* dll_run_target)(char**, u32, char*, u32);
 typedef void (APIENTRY *dll_write_to_testcase)(char*, s32, const void*, u32);
-typedef u8 (APIENTRY* dll_mutate_testcase)(char**, char*, u8*, u32, u8 (*)(char **, u8*, u32));
+typedef u8 (APIENTRY* dll_mutate_testcase)(char**, u8*, u32, u8 (*)(char **, u8*, u32));
 
 // custom server functions
 dll_run dll_run_ptr = NULL;
@@ -5293,7 +5293,7 @@ static u8 fuzz_one(char** argv) {
    *****************/
 
   if (dll_mutate_testcase_ptr)
-    if (dll_mutate_testcase_ptr(argv, queue_cur->fname, in_buf, len, common_fuzz_stuff))
+    if (dll_mutate_testcase_ptr(argv, in_buf, len, common_fuzz_stuff))
       goto abandon_entry;
 
   /************
