@@ -201,6 +201,13 @@ void WriteCommandToPipe(char cmd)
 	WriteFile(pipe, &cmd, 1, &num_written, NULL);
 }
 
+void WriteDWORDCommandToPipe(DWORD data)
+{
+	DWORD num_written;
+	WriteFile(pipe, &data, sizeof(DWORD), &num_written, NULL);
+}
+
+
 static void
 dump_winafl_data()
 {
@@ -226,6 +233,7 @@ onexception(void *drcontext, dr_exception_t *excpt) {
                 dr_fprintf(winafl_data.log, "crashed\n");
             } else {
 				WriteCommandToPipe('C');
+				WriteDWORDCommandToPipe(exception_code);				
             }
             dr_exit_process(1);
     }

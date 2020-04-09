@@ -128,6 +128,7 @@ HANDLE child_handle, child_thread_handle;
 char *dynamorio_dir;
 char *client_params;
 int fuzz_iterations_max = 5000, fuzz_iterations_current;
+DWORD ret_exception_code = 0;
 
 CRITICAL_SECTION critical_section;
 u64 watchdog_timeout_time;
@@ -2499,6 +2500,33 @@ char ReadCommandFromPipe(u32 timeout)
 	return result;
 }
 
+DWORD ReadDWORDFromPipe(u32 timeout)
+{
+	DWORD num_read;
+	DWORD result = 0;
+
+	//char result = 0;
+	if (!is_child_running())
+	{
+		return 0;
+	}
+		if (ReadFile(pipe_handle, &result, sizeof(DWORD), &num_read, &pipe_overlapped) || GetLastError() == ERROR_IO_PENDING)
+		{
+			//ACTF("ReadFile success or GLE IO_PENDING");
+			if (WaitForSingleObject(pipe_overlapped.hEvent, timeout) != WAIT_OBJECT_0) {
+				// took longer than specified timeout or other error - cancel read
+				CancelIo(pipe_handle);
+				WaitForSingleObject(pipe_overlapped.hEvent, INFINITE); //wait for cancelation to finish properly.
+				result = 0;
+			}
+		}
+	
+	//ACTF("ReadFile GLE: %d", GetLastError());
+	//ACTF("result: '%lu'\r\n", result);
+	//ACTF("read so far '%lu'\r\n", read_so_far);
+	return result;
+}
+
 void WriteCommandToPipe(char cmd)
 {
 	DWORD num_written;
@@ -2591,7 +2619,8 @@ static u8 run_target(char** argv, u32 timeout) {
   //todo watchdog timer to detect hangs
   DWORD num_read, dwThreadId;
   char result = 0;
-
+  
+ 
   if(sinkhole_stds && devnul_handle == INVALID_HANDLE_VALUE) {
     devnul_handle = CreateFile(
         "nul",
@@ -2672,6 +2701,8 @@ static u8 run_target(char** argv, u32 timeout) {
   if (result == 'K') return FAULT_NONE;
 
   if (result == 'C') {
+	  ret_exception_code = ReadDWORDFromPipe(timeout);
+	 // ACTF("destroying target process");
 	  destroy_target_process(2000);
 	  return FAULT_CRASH;
   }
@@ -3301,7 +3332,7 @@ static void write_crash_readme(void) {
 
 static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 
-  u8  *fn = "";
+  u8  *fn,*exception_name = "";
   u8  hnb;
   s32 fd;
   u8  keeping = 0, res;
@@ -3414,6 +3445,41 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 
     case FAULT_CRASH:
 
+		switch (ret_exception_code) {
+		case EXCEPTION_ACCESS_VIOLATION:
+			exception_name = alloc_printf("%s", "EXCEPTION_ACCESS_VIOLATION");
+			break;
+
+		case EXCEPTION_ILLEGAL_INSTRUCTION:
+			exception_name = alloc_printf("%s", "EXCEPTION_ILLEGAL_INSTRUCTION");
+			break;
+
+		case EXCEPTION_PRIV_INSTRUCTION:
+			exception_name = alloc_printf("%s", "EXCEPTION_PRIV_INSTRUCTION");
+			break;
+
+		case EXCEPTION_INT_DIVIDE_BY_ZERO:
+			exception_name = alloc_printf("%s", "EXCEPTION_INT_DIVIDE_BY_ZERO");
+			break;
+
+		case STATUS_HEAP_CORRUPTION:
+			exception_name = alloc_printf("%s", "STATUS_HEAP_CORRUPTION");
+			break;
+
+		case EXCEPTION_STACK_OVERFLOW:
+			exception_name = alloc_printf("%s", "EXCEPTION_STACK_OVERFLOW");
+			break;
+
+		case STATUS_STACK_BUFFER_OVERRUN:
+			exception_name = alloc_printf("%s", "STATUS_STACK_BUFFER_OVERRUN");
+			break;
+
+		case STATUS_FATAL_APP_EXIT:
+			exception_name = alloc_printf("%s", "STATUS_FATAL_APP_EXIT");
+			break;
+		default:
+			exception_name = alloc_printf("%s", "EXCEPTION_NAME_NOT_AVAILABLE");
+		}
       /* This is handled in a manner roughly similar to timeouts,
          except for slightly different limits and no need to re-run test
          cases. */
@@ -3443,8 +3509,8 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 
 #else
 
-      fn = alloc_printf("%s\\crashes\\id_%06llu_%02u", out_dir, unique_crashes,
-                        kill_signal);
+      fn = alloc_printf("%s\\crashes\\id_%06llu_%02u_%s", out_dir, unique_crashes,
+                        kill_signal, exception_name);
 
 #endif /* ^!SIMPLE_FILES */
 
@@ -3454,7 +3520,9 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 
       last_crash_execs = total_execs;
 
-      break;
+	  ck_free(exception_name);
+	
+	  break;
 
     case FAULT_ERROR: FATAL("Unable to execute target application");
 
@@ -4806,7 +4874,7 @@ static u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
   }
 
   /* This handles FAULT_ERROR for us: */
-
+ 
   queued_discovered += save_if_interesting(argv, out_buf, len, fault);
 
   if (!(stage_cur % stats_update_freq) || stage_cur + 1 == stage_max)
