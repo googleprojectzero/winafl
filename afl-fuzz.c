@@ -5288,14 +5288,6 @@ static u8 fuzz_one(char** argv) {
 
   }
 
-  /******************
-   * CUSTOM MUTATOR *
-   *****************/
-
-  if (dll_mutate_testcase_ptr)
-    if (dll_mutate_testcase_ptr(argv, in_buf, len, common_fuzz_stuff))
-      goto abandon_entry;
-
   /************
    * TRIMMING *
    ************/
@@ -5327,6 +5319,14 @@ static u8 fuzz_one(char** argv) {
    *********************/
 
   orig_perf = perf_score = calculate_score(queue_cur);
+
+  /******************
+   * CUSTOM MUTATOR *
+   *****************/
+
+  if (dll_mutate_testcase_ptr)
+    if (dll_mutate_testcase_ptr(argv, in_buf, len, common_fuzz_stuff))
+      goto abandon_entry;
 
   /* Skip right away if -d is given, if we have done deterministic fuzzing on
      this entry ourselves (was_fuzzed), or if it has gone through deterministic
