@@ -275,6 +275,33 @@ To avoid this replace the `SO_REUSEADDR` option by `SO_LINGER` option in the ser
 setsockopt(s, SOL_SOCKET, SO_LINGER, (char*)&opt, sizeof(int));
 ```
 
+## Custom mutators
+
+WinAFL supports loading a custom mutator from a third-party DLL.  You need to implement `dll_mutate_testcase` in your DLL and provide the DLL path to WinAFL via `-l <path>` argument.  WinAFL invokes the custom mutator before all the built-in mutations, and the custom mutator can skip all the built-in mutations by returning a non-zero value.  The custom mutator should invoke `common_fuzz_stuff` to run and make WinAFL aware of each new test case.  Below is an example mutator that increments every byte by one: 
+
+```c
+u8 dll_mutate_testcase(char **argv, u8 *buf, u32 len, u8 (*common_fuzz_stuff)(char**, u8*, u32))
+{
+    u8 bailout = 0;
+    u8 *newbuf;
+    u32 i;
+    // duplicate the input buffer
+    newbuf = malloc(len);
+    if (!newbuf) return bailout;
+    memcpy(newbuf, buf, len);
+    // increment every byte by one and call common_fuzz_stuff for every new test case
+    for (i = 0; i < len; i++) {
+       newbuf[i] += 1;
+       if (common_fuzz_stuff(argv, newbuf, len)) {
+           bailout = 1; // skip the rest of the mutation per common_fuzz_stuff
+           break;
+       }
+    }
+    free(newbuf);
+    return bailout;
+}
+```
+
 ## FAQ
 
 ```

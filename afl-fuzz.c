@@ -2555,12 +2555,14 @@ typedef int (APIENTRY* dll_run)(char*, long, int);
 typedef int (APIENTRY* dll_init)();
 typedef u8 (APIENTRY* dll_run_target)(char**, u32, char*, u32);
 typedef void (APIENTRY *dll_write_to_testcase)(char*, s32, const void*, u32);
+typedef u8 (APIENTRY* dll_mutate_testcase)(char**, u8*, u32, u8 (*)(char **, u8*, u32));
 
 // custom server functions
 dll_run dll_run_ptr = NULL;
 dll_init dll_init_ptr = NULL;
 dll_run_target dll_run_target_ptr = NULL;
 dll_write_to_testcase dll_write_to_testcase_ptr = NULL;
+dll_mutate_testcase dll_mutate_testcase_ptr = NULL;
 
 char *get_test_case(long *fsize)
 {
@@ -5318,6 +5320,14 @@ static u8 fuzz_one(char** argv) {
 
   orig_perf = perf_score = calculate_score(queue_cur);
 
+  /******************
+   * CUSTOM MUTATOR *
+   *****************/
+
+  if (dll_mutate_testcase_ptr)
+    if (dll_mutate_testcase_ptr(argv, in_buf, len, common_fuzz_stuff))
+      goto abandon_entry;
+
   /* Skip right away if -d is given, if we have done deterministic fuzzing on
      this entry ourselves (was_fuzzed), or if it has gone through deterministic
      testing in earlier, resumed runs (passed_det). */
@@ -7772,6 +7782,10 @@ void load_custom_library(const char *libname)
   // Get pointer to user-defined write_to_testcase function using GetProcAddress:
   dll_write_to_testcase_ptr = (dll_write_to_testcase)GetProcAddress(hLib, "dll_write_to_testcase");
   SAYF("dll_write_to_testcase %s defined.\n", dll_write_to_testcase_ptr ? "is" : "isn't");
+
+  // Get pointer to user-defined mutate_testcase function using GetProcAddress:
+  dll_mutate_testcase_ptr = (dll_mutate_testcase)GetProcAddress(hLib, "dll_mutate_testcase");
+  SAYF("dll_mutate_testcase %s defined.\n", dll_mutate_testcase_ptr ? "is" : "isn't");
 
   SAYF("Sucessfully loaded and initalized\n");
 }
