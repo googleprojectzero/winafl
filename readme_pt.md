@@ -33,7 +33,7 @@ if the `-debug` flag is specified, `winaflpt-debug.exe` will generate a log file
 Example:
 
 ```
-winafl-debug.exe -debug -coverage_module test.exe -fuzz_iterations 10 -target_module test.exe -target_method main -nargs 2 -- test.exe @@
+winaflpt-debug.exe -debug -coverage_module test.exe -fuzz_iterations 10 -target_module test.exe -target_method main -nargs 2 -- test.exe @@
 ```
 
 When you verified that there weren't any problems in this step, you should be ready to fuzz your target. You can use the same instrumentation flags, but remember to remove the `-debug` flag and you'll probably want to increase the `-fuzz_iterations` count.
