@@ -455,6 +455,12 @@ static void bind_to_free_cpu(void) {
 
   if (cpu_core_count < 2) return;
 
+  if (getenv("AFL_NO_AFFINITY")) {
+
+    WARNF("Not binding to a CPU core (AFL_NO_AFFINITY set).");
+    return;
+  }
+
   /* Currently winafl doesn't support more than 64 cores */
   if (cpu_core_count > 64) {
     SAYF("\n" cLRD "[-] " cRST
@@ -463,12 +469,6 @@ static void bind_to_free_cpu(void) {
     "    you can set AFL_NO_AFFINITY and try again.\n",
     cpu_core_count);
     FATAL("Too many cpus for automatic binding");
-  }
-
-  if (getenv("AFL_NO_AFFINITY")) {
-
-    WARNF("Not binding to a CPU core (AFL_NO_AFFINITY set).");
-    return;
   }
 
   if (!cpu_aff) {
@@ -8026,6 +8026,9 @@ int main(int argc, char** argv) {
 		  break;
 
       case 'c':
+
+        if (getenv("AFL_NO_AFFINITY")) FATAL("-c and AFL_NO_AFFINITY are mutually exclusive.");
+
         if (cpu_aff) {
           FATAL("Multiple -c options not supported");
         }
