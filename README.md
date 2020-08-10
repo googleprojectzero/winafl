@@ -149,14 +149,22 @@ The following afl-fuzz options are supported:
 ```
   -i dir        - input directory with test cases
   -o dir        - output directory for fuzzer findings
-  -D dir        - directory containing DynamoRIO binaries (drrun, drconfig)
-  -p            - persist DynamoRIO cache across target process restarts
   -t msec       - timeout for each run
-  -I msec       - timeout for process initialization and first run
+  -D dir        - directory containing DynamoRIO binaries (drrun, drconfig)
+  -P            - use Intel PT tracing mode
+  -Y            - enable the static instrumentation mode
   -f file       - location read by the fuzzed program
-  -M \\ -S id   - distributed mode
-  -x dir        - optional fuzzer dictionary
   -m limit      - memory limit for the target process
+  -p            - persist DynamoRIO cache across target process restarts
+  -c cpu        - the CPU to run the fuzzed program
+  -d            - quick & dirty mode (skips deterministic steps)
+  -n            - fuzz without instrumentation (dumb mode)
+  -x dir        - optional fuzzer dictionary
+  -I msec       - timeout for process initialization and first run
+  -T text       - text banner to show on the screen
+  -M \\ -S id   - distributed mode
+  -C            - crash exploration mode (the peruvian rabbit thing)
+  -l path       - a path to user-defined DLL for custom test cases processing
 ```
 
 Please refer to the original AFL documentation for more info on these flags.

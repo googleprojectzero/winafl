@@ -110,7 +110,7 @@ static u8  skip_deterministic,        /* Skip deterministic stages?       */
            skip_requested,            /* Skip request, via SIGUSR1        */
            run_over10m,               /* Run time over 10 minutes?        */
            persistent_mode,           /* Running in persistent mode?      */
-	       drioless = 0;              /* Running without DRIO?            */
+           drioless = 0;              /* Running without DRIO?            */
            use_intelpt = 0;           /* Running without DRIO?            */
            custom_dll_defined = 0;    /* Custom DLL path defined ?        */
            persist_dr_cache = 0;      /* Custom DLL path defined ?        */
@@ -7133,24 +7133,29 @@ static void usage(u8* argv0) {
        "  -t msec       - timeout for each run\n\n"
 
        "Instrumentation type:\n\n"
-        "  -D dir        - directory with DynamoRIO binaries (drrun, drconfig)\n"
-        "  -Y            - enable the static instrumentation mode\n\n"
+        "  -D dir       - directory with DynamoRIO binaries (drrun, drconfig)\n"
+        "  -P           - use Intel PT tracing mode\n"
+        "  -Y           - enable the static instrumentation mode\n\n"
 
        "Execution control settings:\n\n"
 
        "  -f file       - location read by the fuzzed program (stdin)\n"
+       "  -m limit      - memory limit for the target process\n"
+       "  -p            - persist DynamoRIO cache across target process restarts\n"
        "  -c cpu        - the CPU to run the fuzzed program\n\n"
  
        "Fuzzing behavior settings:\n\n"
 
        "  -d            - quick & dirty mode (skips deterministic steps)\n"
+       "  -n            - fuzz without instrumentation (dumb mode)\n"
        "  -x dir        - optional fuzzer dictionary (see README)\n\n"
 
        "Other stuff:\n\n"
 
        "  -I msec       - timeout for process initialization and first run\n"
        "  -T text       - text banner to show on the screen\n"
-       "  -M \\ -S id    - distributed mode (see parallel_fuzzing.txt)\n"
+       "  -M \\ -S id   - distributed mode (see parallel_fuzzing.txt)\n"
+       "  -C            - crash exploration mode (the peruvian rabbit thing)\n"
        "  -l path       - a path to user-defined DLL for custom test cases processing\n\n"
 
        "For additional tips, please consult %s\\README.\n\n",
@@ -7901,15 +7906,15 @@ int main(int argc, char** argv) {
 
       }
 
-	  case 'I': {
+      case 'I': {
 
-		  if (sscanf(optarg, "%u", &init_tmout) < 1) FATAL("Bad syntax used for -I");
+        if (sscanf(optarg, "%u", &init_tmout) < 1) FATAL("Bad syntax used for -I");
 
-		  if (init_tmout < 5) FATAL("Dangerously low value of -I");
+        if (init_tmout < 5) FATAL("Dangerously low value of -I");
 
-		  break;
+        break;
 
-	  }
+      }
 
       case 'm': {
 
