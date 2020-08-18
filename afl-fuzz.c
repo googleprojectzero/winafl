@@ -8037,10 +8037,10 @@ int main(int argc, char** argv) {
         if (cpu_aff) {
           FATAL("Multiple -c options not supported");
         } else {
-          u32 cpunum = 0;
+          int cpunum = 0;
 
-          if (sscanf(optarg, "%u", &cpunum) < 1 ||
-              optarg[0] == '-') FATAL("Bad syntax used for -c");
+          if (sscanf(optarg, "%d", &cpunum) < 1 ||
+              cpunum < 0) FATAL("Bad syntax used for -c");
 
           if (cpunum >= 64)
             FATAL("Uh-oh, winafl doesn't support more than 64 cores at the moment\n");
