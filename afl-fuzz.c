@@ -465,7 +465,7 @@ static void bind_to_free_cpu(void) {
   if (cpu_core_count > 64) {
     SAYF("\n" cLRD "[-] " cRST
     "Uh-oh, looks like you have %u CPU cores on your system\n"
-    "    winafl doesn't support more than 64 cores at the momement\n"
+    "    winafl doesn't support more than 64 cores at the moment\n"
     "    you can set AFL_NO_AFFINITY and try again.\n",
     cpu_core_count);
     FATAL("Too many cpus for automatic binding");
@@ -8044,11 +8044,14 @@ int main(int argc, char** argv) {
 
         if (cpu_aff) {
           FATAL("Multiple -c options not supported");
-        }
-        else {
+        } else {
           int cpunum = 0;
 
-          if (sscanf(optarg, "%d", &cpunum) < 1) FATAL("Bad syntax used for -c");
+          if (sscanf(optarg, "%d", &cpunum) < 1 ||
+              cpunum < 0) FATAL("Bad syntax used for -c");
+
+          if (cpunum >= 64)
+            FATAL("Uh-oh, winafl doesn't support more than 64 cores at the moment\n");
 
           cpu_aff = 1ULL << cpunum;
         }
