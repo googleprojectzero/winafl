@@ -3943,7 +3943,7 @@ static void maybe_delete_out_dir(void) {
            "    session, put '-' as the input directory in the command line ('-i -') and\n"
            "    try again.\n", OUTPUT_GRACE);
 
-       FATAL("At-risk data found in in '%s'", out_dir);
+       FATAL("At-risk data found in '%s'", out_dir);
 
     }
 
@@ -7815,7 +7815,7 @@ int main(int argc, char** argv) {
   SAYF("WinAFL " WINAFL_VERSION " by <ifratric@google.com>\n");
   SAYF("Based on AFL " cBRI VERSION cRST " by <lcamtuf@google.com>\n");
 
-  doc_path = "docs";
+  doc_path = "afl_docs";
 
   optind = 1;
 
