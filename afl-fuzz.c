@@ -3979,10 +3979,13 @@ static void maybe_delete_out_dir(void) {
 
   /* Okay, let's get the ball rolling! First, we need to get rid of the entries
      in <out_dir>/.synced/.../id:*, if any are present. */
+  if (!in_place_resume) {
 
-  fn = alloc_printf("%s\\.synced", out_dir);
-  if (delete_files(fn, NULL)) goto dir_cleanup_failed;
-  ck_free(fn);
+    fn = alloc_printf("%s\\.synced", out_dir);
+    if (delete_files(fn, NULL)) goto dir_cleanup_failed;
+    ck_free(fn);
+
+  }
 
   /* Next, we need to clean up <out_dir>/queue/.state/ subdirectories: */
 
@@ -7237,7 +7240,10 @@ static void setup_dirs_fds(void) {
   if (sync_id) {
 
     tmp = alloc_printf("%s\\.synced\\", out_dir);
-    if (mkdir(tmp)) PFATAL("Unable to create '%s'", tmp);
+    
+    if (mkdir(tmp) && (!in_place_resume || errno != EEXIST)) 
+      PFATAL("Unable to create '%s'", tmp);
+
     ck_free(tmp);
 
   }
