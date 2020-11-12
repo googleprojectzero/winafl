@@ -109,7 +109,7 @@ cmake --build . --config Release
 ```
 mkdir build64
 cd build64
-cmake -G"Visual Studio 15 2017 Win64" .. -DDynamoRIO_DIR=..\path\to\DynamoRIO\cmake -DINTELPT=1
+cmake -G"Visual Studio 16 2019" -A x64 .. -DDynamoRIO_DIR=..\path\to\DynamoRIO\cmake -DINTELPT=1
 cmake --build . --config Release
 ```
 
