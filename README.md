@@ -100,7 +100,7 @@ source directory).
 ```
 mkdir build32
 cd build32
-cmake -G"Visual Studio 16 2019" .. -DDynamoRIO_DIR=..\path\to\DynamoRIO\cmake -DINTELPT=1
+cmake -G"Visual Studio 16 2019" -A Win32 .. -DDynamoRIO_DIR=..\path\to\DynamoRIO\cmake -DINTELPT=1
 cmake --build . --config Release
 ```
 
