@@ -81,7 +81,7 @@ WinAFL has been successfully used to identify bugs in Windows software, such as
 
 1. If you are building with DynamoRIO support, download and build
 DynamoRIO sources or download DynamoRIO Windows binary package from
-https://github.com/DynamoRIO/dynamorio/wiki/Downloads
+https://github.com/DynamoRIO/dynamorio/releases
 
 2. If you are building with Intel PT support, pull third party dependencies by running `git submodule update --init --recursive` from the WinAFL source directory
 
