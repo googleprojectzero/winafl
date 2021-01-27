@@ -286,7 +286,7 @@ setsockopt(s, SOL_SOCKET, SO_LINGER, (char*)&opt, sizeof(int));
 
 ## Custom mutators
 
-WinAFL supports loading a custom mutator from a third-party DLL.  You need to implement `dll_mutate_testcase` in your DLL and provide the DLL path to WinAFL via `-l <path>` argument.  WinAFL invokes the custom mutator before all the built-in mutations, and the custom mutator can skip all the built-in mutations by returning a non-zero value.  The custom mutator should invoke `common_fuzz_stuff` to run and make WinAFL aware of each new test case.  Below is an example mutator that increments every byte by one: 
+WinAFL supports loading a custom mutator from a third-party DLL.  You need to implement `dll_mutate_testcase` or `dll_mutate_testcase_with_energy` in your DLL and provide the DLL path to WinAFL via `-l <path>` argument.  WinAFL invokes the custom mutator before all the built-in mutations, and the custom mutator can skip all the built-in mutations by returning a non-zero value.  The `dll_mutate_testcase_with_energy` function is additionally provided an energy value that is equivalent to the number of iterations expected to run in the havoc stage without deterministic mutations. The custom mutator should invoke `common_fuzz_stuff` to run and make WinAFL aware of each new test case.  Below is an example mutator that increments every byte by one: 
 
 ```c
 u8 dll_mutate_testcase(char **argv, u8 *buf, u32 len, u8 (*common_fuzz_stuff)(char**, u8*, u32))

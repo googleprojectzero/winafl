@@ -2559,12 +2559,16 @@ typedef u8 (APIENTRY* dll_run_target)(char**, u32, char*, u32);
 typedef void (APIENTRY *dll_write_to_testcase)(char*, s32, const void*, u32);
 typedef u8 (APIENTRY* dll_mutate_testcase)(char**, u8*, u32, u8 (*)(char **, u8*, u32));
 
+// Parameters: argv, in_buf, buffer_length, mutation_iterations, common_fuzz_stuff
+typedef u8 (APIENTRY* dll_mutate_testcase_with_energy)(char**, u8*, u32, u32, u8 (*)(char **, u8*, u32));
+
 // custom server functions
 dll_run dll_run_ptr = NULL;
 dll_init dll_init_ptr = NULL;
 dll_run_target dll_run_target_ptr = NULL;
 dll_write_to_testcase dll_write_to_testcase_ptr = NULL;
 dll_mutate_testcase dll_mutate_testcase_ptr = NULL;
+dll_mutate_testcase_with_energy dll_mutate_testcase_with_energy_ptr = NULL;
 
 char *get_test_case(long *fsize)
 {
@@ -5335,7 +5339,14 @@ static u8 fuzz_one(char** argv) {
    * CUSTOM MUTATOR *
    *****************/
 
-  if (dll_mutate_testcase_ptr)
+  stage_max = HAVOC_CYCLES_INIT * perf_score / havoc_div / 100;
+  if (stage_max < HAVOC_MIN) stage_max = HAVOC_MIN;
+
+  // Prefer a mutator that accepts the energy.
+  if (dll_mutate_testcase_with_energy_ptr)
+    if (dll_mutate_testcase_with_energy_ptr(argv, in_buf, len, stage_max, common_fuzz_stuff))
+      goto abandon_entry;
+  else if (dll_mutate_testcase_ptr)
     if (dll_mutate_testcase_ptr(argv, in_buf, len, common_fuzz_stuff))
       goto abandon_entry;
 
@@ -7805,6 +7816,10 @@ void load_custom_library(const char *libname)
   // Get pointer to user-defined mutate_testcase function using GetProcAddress:
   dll_mutate_testcase_ptr = (dll_mutate_testcase)GetProcAddress(hLib, "dll_mutate_testcase");
   SAYF("dll_mutate_testcase %s defined.\n", dll_mutate_testcase_ptr ? "is" : "isn't");
+
+  // Get pointer to user-defined dll_mutate_testcase_with_energy_ptr function using GetProcAddress:
+  dll_mutate_testcase_with_energy_ptr = (dll_mutate_testcase_with_energy)GetProcAddress(hLib, "dll_mutate_testcase_with_energy");
+  SAYF("dll_mutate_testcase_with_energy %s defined.\n", dll_mutate_testcase_with_energy_ptr ? "is" : "isn't");
 
   SAYF("Sucessfully loaded and initalized\n");
 }
