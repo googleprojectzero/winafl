@@ -2558,6 +2558,7 @@ typedef int (APIENTRY* dll_init)();
 typedef u8 (APIENTRY* dll_run_target)(char**, u32, char*, u32);
 typedef void (APIENTRY *dll_write_to_testcase)(char*, s32, const void*, u32);
 typedef u8 (APIENTRY* dll_mutate_testcase)(char**, u8*, u32, u8 (*)(char **, u8*, u32));
+typedef u8 (APIENTRY* dll_trim_testcase)(char**, struct queue_entry*, u8*, u8*, void (*)(void*, u32 ), u8 (*)(char**, u32), u32 (*)(const void*, u32, u32));
 
 // custom server functions
 dll_run dll_run_ptr = NULL;
@@ -2565,6 +2566,7 @@ dll_init dll_init_ptr = NULL;
 dll_run_target dll_run_target_ptr = NULL;
 dll_write_to_testcase dll_write_to_testcase_ptr = NULL;
 dll_mutate_testcase dll_mutate_testcase_ptr = NULL;
+dll_trim_testcase dll_trim_testcase_ptr = NULL;
 
 char *get_test_case(long *fsize)
 {
@@ -4738,6 +4740,9 @@ static u8 trim_case(char** argv, struct queue_entry* q, u8* in_buf) {
      this. */
 
   if (q->len < 5) return 0;
+
+  if (dll_trim_testcase_ptr)
+    return dll_trim_testcase_ptr(argv, q, in_buf, trace_bits, write_to_testcase, run_target, hash32);
 
   stage_name = tmp;
   bytes_trim_in += q->len;
@@ -7805,6 +7810,10 @@ void load_custom_library(const char *libname)
   // Get pointer to user-defined mutate_testcase function using GetProcAddress:
   dll_mutate_testcase_ptr = (dll_mutate_testcase)GetProcAddress(hLib, "dll_mutate_testcase");
   SAYF("dll_mutate_testcase %s defined.\n", dll_mutate_testcase_ptr ? "is" : "isn't");
+
+  // Get pointer to user-defined trim_testcase function using GetProcAddress:
+  dll_trim_testcase_ptr = (dll_trim_testcase)GetProcAddress(hLib, "dll_trim_testcase");
+  SAYF("dll_trim_testcase %s defined.\n", dll_mutate_testcase_ptr ? "is" : "isn't");
 
   SAYF("Sucessfully loaded and initalized\n");
 }
