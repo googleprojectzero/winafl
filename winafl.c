@@ -555,7 +555,19 @@ static void
 post_fuzz_handler(void *wrapcxt, void *user_data)
 {
     dr_mcontext_t *mc;
+    void *drcontext;
     mc = drwrap_get_mcontext(wrapcxt);
+
+    if(options.no_loop && (options.coverage_kind == COVERAGE_EDGE || options.thread_coverage)) {
+        // no_loo and thread_coverage are enabled.
+        // It is possible that the thread will return to a thread queue
+        // in which case it can later call other functions than the target.
+        // Therefore, coverage measurement must be stopped for this thread.
+        drcontext = drwrap_get_drcontext(wrapcxt);
+        void **thread_data = (void **)drmgr_get_tls_field(drcontext, winafl_tls_field);
+        thread_data[1] = winafl_data.fake_afl_area;
+    }
+
 
     if(!options.debug_mode) {
 		WriteCommandToPipe('K');
