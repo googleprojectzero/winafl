@@ -2558,7 +2558,7 @@ typedef int (APIENTRY* dll_init)();
 typedef u8 (APIENTRY* dll_run_target)(char**, u32, char*, u32);
 typedef void (APIENTRY *dll_write_to_testcase)(char*, s32, const void*, u32);
 typedef u8 (APIENTRY* dll_mutate_testcase)(char**, u8*, u32, u8 (*)(char **, u8*, u32));
-typedef u8 (APIENTRY* dll_trim_testcase)(char**, struct queue_entry*, u8*, u8*, void (*)(void*, u32 ), u8 (*)(char**, u32), u32 (*)(const void*, u32, u32));
+typedef u8 (APIENTRY* dll_trim_testcase)(u32*, u32, u8*, u8*, void (*)(void*, u32), u8 (*)(char**, u32), char**, u32);
 
 // custom server functions
 dll_run dll_run_ptr = NULL;
@@ -4741,8 +4741,17 @@ static u8 trim_case(char** argv, struct queue_entry* q, u8* in_buf) {
 
   if (q->len < 5) return 0;
 
-  if (dll_trim_testcase_ptr)
-    return dll_trim_testcase_ptr(argv, q, in_buf, trace_bits, write_to_testcase, run_target, hash32);
+  if (dll_trim_testcase_ptr) {
+    // Call the custom trimming function.
+    // The trimmed data will be set in in_buf and its length in q->len.
+    // The implementation can test for changes in the trace after calling run_target
+    // by calculating the hash for trace_bits and comparing it to q->exec_cksum.
+    // Checksum function is declared in hash.h.
+    // The return value will determine if the trimmed data will be written to a file.
+    needs_write = dll_trim_testcase_ptr(&q->len, q->exec_cksum,
+      in_buf, trace_bits, write_to_testcase, run_target, argv, exec_tmout);
+    goto write_trimmed;
+  }
 
   stage_name = tmp;
   bytes_trim_in += q->len;
@@ -4821,7 +4830,7 @@ static u8 trim_case(char** argv, struct queue_entry* q, u8* in_buf) {
 
   /* If we have made changes to in_buf, we also need to update the on-disk
      version of the test case. */
-
+write_trimmed:
   if (needs_write) {
 
     s32 fd;
