@@ -5339,12 +5339,9 @@ static u8 fuzz_one(char** argv) {
    * CUSTOM MUTATOR *
    *****************/
 
-  stage_max = HAVOC_CYCLES_INIT * perf_score / havoc_div / 100;
-  if (stage_max < HAVOC_MIN) stage_max = HAVOC_MIN;
-
-  // Prefer a mutator that accepts the energy.
+  // Prefer a custom mutator that accepts the performance score as an energy value.
   if (dll_mutate_testcase_with_energy_ptr)
-    if (dll_mutate_testcase_with_energy_ptr(argv, in_buf, len, stage_max, common_fuzz_stuff))
+    if (dll_mutate_testcase_with_energy_ptr(argv, in_buf, len, perf_score, common_fuzz_stuff))
       goto abandon_entry;
   else if (dll_mutate_testcase_ptr)
     if (dll_mutate_testcase_ptr(argv, in_buf, len, common_fuzz_stuff))
