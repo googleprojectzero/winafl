@@ -2558,6 +2558,7 @@ typedef int (APIENTRY* dll_init)();
 typedef u8 (APIENTRY* dll_run_target)(char**, u32, char*, u32);
 typedef void (APIENTRY *dll_write_to_testcase)(char*, s32, const void*, u32);
 typedef u8 (APIENTRY* dll_mutate_testcase)(char**, u8*, u32, u8 (*)(char **, u8*, u32));
+typedef u8 (APIENTRY* dll_trim_testcase)(u32*, u32, u8*, u8*, void (*)(void*, u32), u8 (*)(char**, u32), char**, u32);
 
 // Parameters: argv, in_buf, buffer_length, mutation_iterations, common_fuzz_stuff
 typedef u8 (APIENTRY* dll_mutate_testcase_with_energy)(char**, u8*, u32, u32, u8 (*)(char **, u8*, u32));
@@ -2568,6 +2569,7 @@ dll_init dll_init_ptr = NULL;
 dll_run_target dll_run_target_ptr = NULL;
 dll_write_to_testcase dll_write_to_testcase_ptr = NULL;
 dll_mutate_testcase dll_mutate_testcase_ptr = NULL;
+dll_trim_testcase dll_trim_testcase_ptr = NULL;
 dll_mutate_testcase_with_energy dll_mutate_testcase_with_energy_ptr = NULL;
 
 char *get_test_case(long *fsize)
@@ -4743,6 +4745,18 @@ static u8 trim_case(char** argv, struct queue_entry* q, u8* in_buf) {
 
   if (q->len < 5) return 0;
 
+  if (dll_trim_testcase_ptr) {
+    // Call the custom trimming function.
+    // The trimmed data will be set in in_buf and its length in q->len.
+    // The implementation can test for changes in the trace after calling run_target
+    // by calculating the hash for trace_bits and comparing it to q->exec_cksum.
+    // Checksum function is declared in hash.h.
+    // The return value will determine if the trimmed data will be written to a file.
+    needs_write = dll_trim_testcase_ptr(&q->len, q->exec_cksum,
+      in_buf, trace_bits, write_to_testcase, run_target, argv, exec_tmout);
+    goto write_trimmed;
+  }
+
   stage_name = tmp;
   bytes_trim_in += q->len;
 
@@ -4820,7 +4834,7 @@ static u8 trim_case(char** argv, struct queue_entry* q, u8* in_buf) {
 
   /* If we have made changes to in_buf, we also need to update the on-disk
      version of the test case. */
-
+write_trimmed:
   if (needs_write) {
 
     s32 fd;
@@ -7813,6 +7827,10 @@ void load_custom_library(const char *libname)
   // Get pointer to user-defined mutate_testcase function using GetProcAddress:
   dll_mutate_testcase_ptr = (dll_mutate_testcase)GetProcAddress(hLib, "dll_mutate_testcase");
   SAYF("dll_mutate_testcase %s defined.\n", dll_mutate_testcase_ptr ? "is" : "isn't");
+
+  // Get pointer to user-defined trim_testcase function using GetProcAddress:
+  dll_trim_testcase_ptr = (dll_trim_testcase)GetProcAddress(hLib, "dll_trim_testcase");
+  SAYF("dll_trim_testcase %s defined.\n", dll_mutate_testcase_ptr ? "is" : "isn't");
 
   // Get pointer to user-defined dll_mutate_testcase_with_energy_ptr function using GetProcAddress:
   dll_mutate_testcase_with_energy_ptr = (dll_mutate_testcase_with_energy)GetProcAddress(hLib, "dll_mutate_testcase_with_energy");
