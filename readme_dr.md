@@ -160,7 +160,7 @@ that with a simple execution redirection won't break global states and will do
 both reading and processing of inputs.
 
 This mode assumes that the target application will actually loop
-the target function by itself, and will handle properly its global state
+the target function by itself, and will handle properly its global state.
 For example a udp server handling packets or a js interpreter running inside
 a while loop.
 
