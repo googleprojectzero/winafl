@@ -327,6 +327,14 @@ def main(argc, argv):
     if args.target_cmdline[0] == '--':
         del args.target_cmdline[0]
 
+    # Validate that the first argument is an executable
+    if not os.path.isfile(args.target_cmdline[0]):
+        logging.error(
+            '[!] The target command line\'s first argument needs to'
+            ' be an existing executable file.'
+        )
+        return 1
+
     # If we are not seeing the '@@' marker somewhere and that we are not
     # specifying an input file with -f, then it means something is wrong
     if args.file_read is None and '@@' not in args.target_cmdline:
