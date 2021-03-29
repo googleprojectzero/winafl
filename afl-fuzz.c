@@ -3010,11 +3010,9 @@ static void perform_dry_run(char** argv) {
 
           SAYF("\n" cLRD "[-] " cRST
                "The program took more than %u ms to process one of the initial test cases.\n"
-               "    Usually, the right thing to do is to relax the -t option - or to delete it\n"
-               "    altogether and allow the fuzzer to auto-calibrate. That said, if you know\n"
-               "    what you are doing and want to simply skip the unruly test cases, append\n"
-               "    '+' at the end of the value passed to -t ('-t %u+').\n", exec_tmout,
-               exec_tmout);
+               "    In WinAFL, this error could also mean incorrect instrumentation params.\n"
+               "    Please make sure instrumentation runs correctly using the debug mode\n"
+               "    (see the README) before attempting to run afl-fuzz.\n", exec_tmout);
 
           FATAL("Test case '%s' results in a timeout", fn);
 
