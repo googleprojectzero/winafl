@@ -15,6 +15,8 @@
 #      http://www.apache.org/licenses/LICENSE-2.0
 #
 #
+from __future__ import print_function
+
 import argparse
 import collections
 import logging
@@ -306,9 +308,9 @@ def do_unique_copy(filepath, dest_path):
     shutil.copy(filepath, new_dest)
     
 def main(argc, argv):
-    print 'corpus minimization tool for WinAFL by <0vercl0k@tuxfamily.org>'
-    print 'Based on WinAFL by <ifratric@google.com>'
-    print 'Based on AFL by <lcamtuf@google.com>'
+    print('corpus minimization tool for WinAFL by <0vercl0k@tuxfamily.org>')
+    print('Based on WinAFL by <ifratric@google.com>')
+    print('Based on AFL by <lcamtuf@google.com>')
 
     logging.basicConfig(
         filename = 'winafl-cmin.log',
@@ -419,7 +421,7 @@ def main(argc, argv):
     # Do a dry run with the first file in the set
     logging.info('[*] Testing the target binary...')
     f = AFLShowMapWorker(args)
-    results = map(f, (inputs[0], inputs[0]))
+    results = list(map(f, (inputs[0], inputs[0])))
     if results[0] != results[1]:
         logging.error('[!] Dry-run failed, 2 executions resulted differently:')
         logging.error(
@@ -501,7 +503,7 @@ def main(argc, argv):
         AFLShowMapWorker(args),
         inputs
     ):
-        print '\rProcessing file %d/%d...' % (i, inputs_len),
+        print('\rProcessing file %d/%d...' % (i, inputs_len), end=' ')
         i += 1
         # If the set of tuples is empty, something weird happened
         if len(result.tuples) == 0:
@@ -546,7 +548,7 @@ def main(argc, argv):
 
         # Keep an updated dictionary mapping a tuple to the fittest file
         # of all the paths.
-        for tuple_id, tuple_hitcount in result.tuples.iteritems():
+        for tuple_id, tuple_hitcount in result.tuples.items():
             fileinfo = {
                 'size' : result.filesize,
                 'path' : result.path,
@@ -572,6 +574,7 @@ def main(argc, argv):
                             candidate[tuple_id] = fileinfo
             else:
                 candidates[tuple_id] = fileinfo
+    p.close()
 
     len_crash_files, len_hang_files, len_empty_tuple_files = map(
         len, (crash_files, hang_files, empty_tuple_files)
@@ -579,7 +582,7 @@ def main(argc, argv):
     effective_len = inputs_len - (
         len_crash_files + len_hang_files + len_empty_tuple_files
     )
-    print
+    print()
 
     len_uniq_tuples = len(uniq_tuples)
     logging.info(
@@ -631,7 +634,7 @@ def main(argc, argv):
 
         # Remove the other tuples also exercised by the candidate
         # from the remaining_tuples list.
-        for tuple_exercised in candidate['tuples'].iterkeys():
+        for tuple_exercised in candidate['tuples']:
             # Remove the tuples exercised if we have not
             # removed them already from the
             # remaining_tuples list.
@@ -645,16 +648,16 @@ def main(argc, argv):
         # We are now done with this tuple, we can get rid of it.
         del candidates[tuple_]
 
-        print '\rProcessing tuple %d/%d...' % (
+        print('\rProcessing tuple %d/%d...' % (
             len_uniq_tuples - len(remaining_tuples),
             len_uniq_tuples
-        ),
+        ), end=' ')
 
         # If we don't have any more tuples left, we are done.
         if len(remaining_tuples) == 0:
             break
 
-    print
+    print()
     logging.info('[+] Original set was composed of %d files', inputs_len)
     logging.info(
         '[+] Effective set was composed of %d files (total size %d MB).',
