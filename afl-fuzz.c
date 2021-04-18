@@ -127,6 +127,7 @@ static s32 out_fd,                    /* Persistent fd for out_file       */
 HANDLE child_handle, child_thread_handle;
 char *dynamorio_dir;
 char *client_params;
+char *winafl_dll_path;
 int fuzz_iterations_max = 5000, fuzz_iterations_current;
 DWORD ret_exception_code = 0;
 
@@ -2299,12 +2300,12 @@ static void create_target_process(char** argv) {
     pidfile = alloc_printf("childpid_%s.txt", fuzzer_id);
 	if (persist_dr_cache) {
 		cmd = alloc_printf(
-			"%s\\drrun.exe -pidfile %s -no_follow_children -persist -persist_dir \"%s\\drcache\" -c winafl.dll %s -fuzzer_id %s -drpersist -- %s",
-			dynamorio_dir, pidfile, out_dir, client_params, fuzzer_id, target_cmd);
+			"%s\\drrun.exe -pidfile %s -no_follow_children -persist -persist_dir \"%s\\drcache\" -c %s %s -fuzzer_id %s -drpersist -- %s",
+			dynamorio_dir, pidfile, out_dir, winafl_dll_path, client_params, fuzzer_id, target_cmd);
 	} else {
 		cmd = alloc_printf(
-			"%s\\drrun.exe -pidfile %s -no_follow_children -c winafl.dll %s -fuzzer_id %s -- %s",
-			dynamorio_dir, pidfile, client_params, fuzzer_id, target_cmd);
+			"%s\\drrun.exe -pidfile %s -no_follow_children -c %s %s -fuzzer_id %s -- %s",
+			dynamorio_dir, pidfile, winafl_dll_path, client_params, fuzzer_id, target_cmd);
 	}
   }
   if(mem_limit || cpu_aff) {
@@ -7165,6 +7166,7 @@ static void usage(u8* argv0) {
 
        "Instrumentation type:\n\n"
         "  -D dir       - directory with DynamoRIO binaries (drrun, drconfig)\n"
+        "  -w winafl    - Path to winafl.dll\n"
         "  -P           - use Intel PT tracing mode\n"
         "  -Y           - enable the static instrumentation mode\n\n"
 
@@ -7865,8 +7867,9 @@ int main(int argc, char** argv) {
   out_dir = NULL;
   dynamorio_dir = NULL;
   client_params = NULL;
+  winafl_dll_path = "winafl.dll";
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:I:T:dYnCB:S:M:x:QD:b:l:pPc:")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:t:I:T:dYnCB:S:M:x:QD:b:l:pPc:w:")) > 0)
 
     switch (opt) {
       case 'i':
@@ -7882,6 +7885,12 @@ int main(int argc, char** argv) {
 
         if (out_dir) FATAL("Multiple -o options not supported");
         out_dir = optarg;
+        break;
+
+      case 'w': /* winafl.dll path */
+
+        if (out_dir) FATAL("Multiple -w options not supported");
+        winafl_dll_path = optarg;
         break;
 
       case 'D': /* dynamorio dir */
