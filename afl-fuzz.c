@@ -7889,7 +7889,7 @@ int main(int argc, char** argv) {
 
       case 'w': /* winafl.dll path */
 
-        if (out_dir) FATAL("Multiple -w options not supported");
+        if (winafl_dll_path) FATAL("Multiple -w options not supported");
         winafl_dll_path = optarg;
         break;
 
