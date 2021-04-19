@@ -7867,7 +7867,7 @@ int main(int argc, char** argv) {
   out_dir = NULL;
   dynamorio_dir = NULL;
   client_params = NULL;
-  winafl_dll_path = "winafl.dll";
+  winafl_dll_path = NULL;
 
   while ((opt = getopt(argc, argv, "+i:o:f:m:t:I:T:dYnCB:S:M:x:QD:b:l:pPc:w:")) > 0)
 
@@ -8109,6 +8109,9 @@ int main(int argc, char** argv) {
 
   if (!in_dir || !out_dir || !timeout_given || (!drioless && !dynamorio_dir && !use_intelpt)) usage(argv[0]);
 
+  if (!winafl_dll_path) {
+    winafl_dll_path = "winafl.dll";
+  }
 
   setup_signal_handlers();
   check_asan_opts();
