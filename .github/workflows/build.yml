@@ -11,8 +11,7 @@ jobs:
     - name: Add submodules
       run: git submodule update --init --recursive
     - name: Create build dir
-      run: |
-        mkdir build_${{ matrix.platform }}
+      run: mkdir build_${{ matrix.platform }}
     - name: Download DynamoRIO
       working-directory: build_${{ matrix.platform }}
       run: |
