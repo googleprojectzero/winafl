@@ -400,6 +400,10 @@ def validate_args(args):
             dir_path = os.path.join(args.working_dir, i)
 
         if not os.path.isdir(dir_path):
+            logging.error(
+                '[!] Specified input directory "%s" does not exist',
+                i
+            )
             return False
 
     return True
