@@ -317,7 +317,7 @@ def validate_args(args):
         return False
 
     # Another sanity check on the root of output directory
-    if os.path.isdir(os.path.basename(args.output)) is False:
+    if os.path.isdir(os.path.split(args.output)[0]) is False:
         logging.error(
             '[!] The output directory %r is not a directory', args.output
         )
