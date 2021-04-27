@@ -1,5 +1,4 @@
 import os
-import sys
 import argparse
 import tempfile
 import time
@@ -8,7 +7,7 @@ import re
 
 FUZZER_STATS_RX = re.compile('([a-zA-Z_]+)\s+:\s+(.+?)\n')
 
-TEMPLATE = '''
+TEMPLATE = r'''
 <table style="font-family: 'Trebuchet MS', 'Tahoma', 'Arial', 'Helvetica'">
 <tr><td style="width: 18ex"><b>Banner:</b></td><td>{banner}</td></tr>
 <tr><td><b>Directory:</b></td><td>{fuzzer_dir}</td></tr>
@@ -61,6 +60,7 @@ set output '{outdir}/exec_speed.png'
 plot '{fuzzer_dir}/plot_data' using 1:11 with filledcurve x1 title '' linecolor rgb '#0090ff' fillstyle transparent solid 0.2 noborder, \\
      '{fuzzer_dir}/plot_data' using 1:11 with lines title '    execs/sec' linecolor rgb '#0090ff' linewidth 3 smooth bezier;
 '''
+
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
