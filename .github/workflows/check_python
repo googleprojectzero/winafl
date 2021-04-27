@@ -1,0 +1,20 @@
+name: flake8
+on: [push, pull_request]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [ '2.x', '3.x']
+    name: Python ${{ matrix.python-version }} sample
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup python
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+          architecture: x64
+      - name: Install flake8
+      run: pip install flake8
+      - name: Run flake8
+      run: python -m flake8 --ignore=E501
