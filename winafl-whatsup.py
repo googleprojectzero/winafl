@@ -5,7 +5,8 @@ import glob
 import ctypes
 import argparse
 
-FUZZER_STATS_RX = re.compile('([a-zA-Z_]+)\s+:\s+(.+?)\n')
+FUZZER_STATS_RX = re.compile(r'([a-zA-Z_]+)\s+:\s+(.+?)\n')
+
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
