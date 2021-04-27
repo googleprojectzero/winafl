@@ -45,7 +45,7 @@ class AFLShowMapWorker(object):
         self.args = args
 
     @staticmethod
-    def _to_showmap_options(args, trace_name = '-'):
+    def _to_showmap_options(args, trace_name='-'):
         '''Takes the argparse namespace, and convert it to the list of options used
         to invoke afl-showmap.exe'''
         r = [
@@ -117,7 +117,7 @@ class AFLShowMapWorker(object):
         if os.path.isfile(trace_name):
             os.remove(trace_name)
 
-        p = subprocess.Popen(opts, close_fds = True)
+        p = subprocess.Popen(opts, close_fds=True)
         p.wait()
 
         if fileread is not None:
@@ -161,8 +161,8 @@ def memory_limit(opt):
 def setup_argparse():
     '''Sets up the argparse configuration.'''
     parser = argparse.ArgumentParser(
-        formatter_class = argparse.RawDescriptionHelpFormatter,
-        epilog = '\n'.join(wrap(dedent(
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='\n'.join(wrap(dedent(
             '''
             Examples of use:
              * Typical use
@@ -180,87 +180,87 @@ def setup_argparse():
              * Typical use with static instrumentation
               winafl-cmin.py -Y -t 100000 -i in -o minset -- test.instr.exe @@
             '''
-        ), 100, replace_whitespace = False))
+        ), 100, replace_whitespace=False))
     )
 
     group = parser.add_argument_group('basic parameters')
     group.add_argument(
-        '-i', '--input', action = 'append', required = True,
-        metavar = 'dir', help = 'input directory with the starting corpus.'
+        '-i', '--input', action='append', required=True,
+        metavar='dir', help='input directory with the starting corpus.'
         ' Multiple input directories are supported'
     )
     group.add_argument(
-        '-o', '--output', required = True,
-        metavar = 'dir', help = 'output directory for minimized files'
+        '-o', '--output', required=True,
+        metavar='dir', help='output directory for minimized files'
     )
     group.add_argument(
-        '-n', '--dry-run', action = 'store_true', default = False,
-        help = 'do not really populate the output directory'
+        '-n', '--dry-run', action='store_true', default=False,
+        help='do not really populate the output directory'
     )
     group.add_argument(
-        '--working-dir', default = os.getcwd(),
-        metavar = 'dir', help = 'directory containing afl-showmap.exe,'
+        '--working-dir', default=os.getcwd(),
+        metavar='dir', help='directory containing afl-showmap.exe,'
         'winafl.dll, the target binary, etc.'
     )
     group.add_argument(
-        '-v', '--verbose', action = 'store_const',
-        default = logging.INFO, const = logging.DEBUG
+        '-v', '--verbose', action='store_const',
+        default=logging.INFO, const=logging.DEBUG
     )
 
     group = parser.add_argument_group('instrumentation settings')
-    instr_type = group.add_mutually_exclusive_group(required = True)
+    instr_type = group.add_mutually_exclusive_group(required=True)
     instr_type.add_argument(
-        '-Y', '--static-instr', action = 'store_true',
-        help = 'use the static instrumentation mode'
+        '-Y', '--static-instr', action='store_true',
+        help='use the static instrumentation mode'
     )
 
     instr_type.add_argument(
         '-D', '--dynamorio_dir',
-        metavar = 'dir', help = 'directory containing DynamoRIO binaries (drrun, drconfig)'
+        metavar='dir', help='directory containing DynamoRIO binaries (drrun, drconfig)'
     )
 
     group.add_argument(
-        '-covtype', choices = ('edge', 'bb'), default = 'bb',
-        help = 'the type of coverage being recorded (defaults to bb)'
+        '-covtype', choices=('edge', 'bb'), default='bb',
+        help='the type of coverage being recorded (defaults to bb)'
     )
     group.add_argument(
-        '-call_convention', choices = ('stdcall', 'fastcall', 'thiscall', 'ms64'),
-        default = 'stdcall', help = 'the calling convention of the target_method'
+        '-call_convention', choices=('stdcall', 'fastcall', 'thiscall', 'ms64'),
+        default='stdcall', help='the calling convention of the target_method'
     )
     group.add_argument(
-        '-coverage_module', dest = 'coverage_modules', default = None,
-        action = 'append', metavar = 'module', help = 'module for which to record coverage.'
+        '-coverage_module', dest='coverage_modules', default=None,
+        action='append', metavar='module', help='module for which to record coverage.'
         ' Multiple module flags are supported'
     )
     group.add_argument(
-        '-target_module', default = None, metavar = 'module',
-        help = 'module which contains the target function to be fuzzed'
+        '-target_module', default=None, metavar='module',
+        help='module which contains the target function to be fuzzed'
     )
     group.add_argument(
-        '-nargs', type = int, default = None, metavar = 'nargs',
-        help = 'number of arguments the fuzzed method takes. This is used to save/restore'
+        '-nargs', type=int, default=None, metavar='nargs',
+        help='number of arguments the fuzzed method takes. This is used to save/restore'
         ' the arguments between runs'
     )
 
     group = group.add_mutually_exclusive_group()
     group.add_argument(
-        '-target_method', default = None, metavar = 'method',
-        help = 'name of the method to fuzz in persistent mode.'
+        '-target_method', default=None, metavar='method',
+        help='name of the method to fuzz in persistent mode.'
         ' A symbol for the method needs to be exported for this to work'
     )
     group.add_argument(
-        '-target_offset', default = None, type = target_offset, metavar = 'rva offset',
-        help = 'offset of the method to fuzz from the start of the module'
+        '-target_offset', default=None, type=target_offset, metavar='rva offset',
+        help='offset of the method to fuzz from the start of the module'
     )
 
     group = parser.add_argument_group('execution control settings')
     group.add_argument(
-        '-t', '--time-limit', type = int, default = 0,
-        metavar = 'msec', help = 'timeout for each run (none)'
+        '-t', '--time-limit', type=int, default=0,
+        metavar='msec', help='timeout for each run (none)'
     )
     group.add_argument(
-        '-m', '--memory-limit', default = 'none', type = memory_limit,
-        metavar = 'megs', help = 'memory limit for child process'
+        '-m', '--memory-limit', default='none', type=memory_limit,
+        metavar='megs', help='memory limit for child process'
     )
     # Note(0vercl0k): If you use -f, which means you want the input file at
     # a specific location (and a specific name), we have to force the pool
@@ -268,31 +268,31 @@ def setup_argparse():
     # specified by -f.. unless you provide a pattern with @@ like
     # c:\dir\prefix@@suffix where @@ will be replaced with a unique identifier.
     group.add_argument(
-        '-f', '--file-read', default = None,
-        metavar = 'file', help = 'location read by the fuzzed program. '
+        '-f', '--file-read', default=None,
+        metavar='file', help='location read by the fuzzed program. '
         'Usage of @@ is encouraged to keep parallelization possible'
     )
 
     group = parser.add_argument_group('minimization settings')
     group.add_argument(
-        '-C', '--crash-only', action = 'store_true', default = False,
-        help = 'keep crashing inputs, reject everything else'
+        '-C', '--crash-only', action='store_true', default=False,
+        help='keep crashing inputs, reject everything else'
     )
     group.add_argument(
-        '-e', '--edges-only', action = 'store_true', default = False,
-        help = 'solve for edge coverage only, ignore hit counts'
+        '-e', '--edges-only', action='store_true', default=False,
+        help='solve for edge coverage only, ignore hit counts'
     )
     group.add_argument(
-        '-w', '--workers', type = int, default = multiprocessing.cpu_count(),
-        metavar = 'n', help = 'The number of worker processes (default: cpu count)'
+        '-w', '--workers', type=int, default=multiprocessing.cpu_count(),
+        metavar='n', help='The number of worker processes (default: cpu count)'
     )
     group.add_argument(
-        '--skip-dry-run', action = 'store_true', default = False,
-        help = 'Skip the dry-run step even if it failed'
+        '--skip-dry-run', action='store_true', default=False,
+        help='Skip the dry-run step even if it failed'
     )
     parser.add_argument(
-        'target_cmdline', nargs = argparse.REMAINDER,
-        help = 'target command line'
+        'target_cmdline', nargs=argparse.REMAINDER,
+        help='target command line'
     )
     return parser.parse_args()
 
@@ -322,7 +322,7 @@ def validate_args(args):
             '[!] The output directory %r is not a directory', args.output
         )
         return False
-        
+
     if os.path.isdir(args.working_dir) is False:
         logging.error(
             '[!] The working directory %r is not a directory', args.working_dir
@@ -460,7 +460,7 @@ def run_all_inputs(args, inputs):
     )
 
     logging.info('[*] Instantiating %d worker processes.', nprocesses)
-    p = multiprocessing.Pool(processes = nprocesses)
+    p = multiprocessing.Pool(processes=nprocesses)
     # This tracks every unique tuples and their popularities
     uniq_tuples = collections.Counter()
     # This will associate a tuple with the currently fittest file exercising
@@ -534,10 +534,10 @@ def run_all_inputs(args, inputs):
         # of all the paths.
         for tuple_id, tuple_hitcount in result.tuples.items():
             fileinfo = {
-                'size' : result.filesize,
-                'path' : result.path,
-                'tuples' : result.tuples,
-                'hitcount' : tuple_hitcount
+                'size': result.filesize,
+                'path': result.path,
+                'tuples': result.tuples,
+                'hitcount': tuple_hitcount
             }
 
             if tuple_id in candidates:
@@ -653,7 +653,7 @@ def do_unique_copy(filepath, dest_path):
     id = 0
     # Avoid duplicated filename in the destination folder
     while os.path.exists(new_dest):
-        new_dest = os.path.join(dest_path, filename+"_"+str(id))
+        new_dest = os.path.join(dest_path, filename + "_" + str(id))
         id += 1
 
     # Now we can copy the file to destination
@@ -666,9 +666,9 @@ def main(argc, argv):
     print('Based on AFL by <lcamtuf@google.com>')
 
     logging.basicConfig(
-        filename = 'winafl-cmin.log',
-        level = logging.DEBUG,
-        format = '%(asctime)s [%(levelname)-5.5s] [%(funcName)s] %(message)s'
+        filename='winafl-cmin.log',
+        level=logging.DEBUG,
+        format='%(asctime)s [%(levelname)-5.5s] [%(funcName)s] %(message)s'
     )
 
     args = setup_argparse()
