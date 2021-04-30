@@ -682,6 +682,11 @@ def main(argc, argv):
     if args.target_cmdline[0] == '--':
         del args.target_cmdline[0]
 
+    logging.debug(
+                    '[+] winafl-cmin launched with the following arguments: %s',
+                    ' '.join(sys.argv)
+                )
+
     if not validate_args(args):
         return 1
 
