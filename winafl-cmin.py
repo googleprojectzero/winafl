@@ -194,6 +194,14 @@ def setup_argparse():
         metavar = 'dir', help = 'output directory for minimized files'
     )
     group.add_argument(
+        '--crash-dir', required=False,
+        metavar='dir', help='output directory for crashing files'
+    )
+    group.add_argument(
+        '--hang-dir', required=False,
+        metavar='dir', help='output directory for hanging files'
+    )
+    group.add_argument(
         '-n', '--dry-run', action = 'store_true', default = False,
         help = 'do not really populate the output directory'
     )
@@ -276,7 +284,7 @@ def setup_argparse():
     group = parser.add_argument_group('minimization settings')
     group.add_argument(
         '-C', '--crash-only', action = 'store_true', default = False,
-        help = 'keep crashing inputs, reject everything else'
+        help = 'keep crashing inputs in output directory, reject everything else'
     )
     group.add_argument(
         '-e', '--edges-only', action = 'store_true', default = False,
@@ -323,6 +331,20 @@ def validate_args(args):
         )
         return False
         
+    # Another sanity check on the root of crash directory
+    if args.crash_dir and os.path.isdir(os.path.split(args.crash_dir)[0]) is False:
+        logging.error(
+            '[!] The output crash directory %r is not a directory', args.crash_dir
+        )
+        return False
+
+    # Another sanity check on the root of hang directory
+    if args.hang_dir and os.path.isdir(os.path.split(args.hang_dir)[0]) is False:
+        logging.error(
+            '[!] The output hangs directory %r is not a directory', args.hang_dir
+        )
+        return False
+
     if os.path.isdir(args.working_dir) is False:
         logging.error(
             '[!] The working directory %r is not a directory', args.working_dir
@@ -594,7 +616,7 @@ def run_all_inputs(args, inputs):
         for empty_tuple_file in empty_tuple_files:
             logging.debug('    - %s generated an empty tuple', empty_tuple_file)
 
-    return uniq_tuples, candidates, effective_len, totalsize
+    return uniq_tuples, candidates, effective_len, totalsize, crash_files, hang_files
 
 
 def find_best_candidates(uniq_tuples, candidates):
@@ -646,18 +668,13 @@ def find_best_candidates(uniq_tuples, candidates):
     return minset, minsetsize
 
 
-def do_unique_copy(filepath, dest_path):
-    filename = os.path.basename(filepath)
-    new_dest = os.path.join(dest_path, filename)
-
-    id = 0
-    # Avoid duplicated filename in the destination folder
-    while os.path.exists(new_dest):
-        new_dest = os.path.join(dest_path, filename+"_"+str(id))
-        id += 1
-
-    # Now we can copy the file to destination
-    shutil.copy(filepath, new_dest)
+def do_unique_copy(filepaths, dest_dir):
+    os.mkdir(dest_dir)
+    num_digits = len(str(len(filepaths)-1))
+    for i, fpath in enumerate(filepaths):
+        filename = os.path.basename(fpath)
+        dest_path = os.path.join(dest_dir, 'id_' + str(i).zfill(num_digits) + "_" + filename)
+        shutil.copy(fpath, dest_path)
 
 
 def main(argc, argv):
@@ -715,7 +732,7 @@ def main(argc, argv):
         return 1
 
     t0 = time.time()
-    uniq_tuples, candidates, effective_len, totalsize = run_all_inputs(args, inputs)
+    uniq_tuples, candidates, effective_len, totalsize, crash_files, hang_files = run_all_inputs(args, inputs)
 
     logging.info('[*] Finding best candidates for each tuple...')
 
@@ -736,9 +753,21 @@ def main(argc, argv):
         logging.info(
             '[*] Saving the minset in %s...', os.path.abspath(args.output)
         )
-        os.mkdir(args.output)
-        for file_path in minset:
-            do_unique_copy(file_path, args.output)
+        do_unique_copy(minset, args.output)
+
+        if args.crash_dir and crash_files:
+            logging.info(
+                '[+] Saving %d crashing files to %s',
+                len(crash_files), args.crash_dir
+            )
+            do_unique_copy(crash_files, args.crash_dir)
+
+        if args.hang_dir and hang_files:
+            logging.info(
+                '[+] Saving %d hanging files to %s',
+                len(hang_files), args.hang_dir
+            )
+            do_unique_copy(hang_files, args.hang_dir)
 
     logging.info('[+] Time elapsed: %d seconds', time.time() - t0)
     return 0
