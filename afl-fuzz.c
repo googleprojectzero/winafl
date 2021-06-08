@@ -32,6 +32,8 @@
 #define WIN32_LEAN_AND_MEAN /* prevent winsock.h to be included in windows.h */
 
 #define _CRT_RAND_S
+#define MAX_SAMPLE_SIZE 1000000
+
 #include <windows.h>
 #include <TlHelp32.h>
 #include <stdarg.h>
@@ -65,7 +67,7 @@
 
 /* Lots of globals, but mostly for the status UI and other things where it
    really makes no sense to haul them around as function parameters. */
-
+BOOL use_shared_memory;
 static u8 *in_dir,                    /* Input directory with test cases  */
           *out_file,                  /* File to fuzz, if any             */
           *out_dir,                   /* Working & output directory       */
@@ -144,6 +146,10 @@ static u8  virgin_bits[MAP_SIZE],     /* Regions yet untouched by fuzzing */
 static u8  var_bytes[MAP_SIZE];       /* Bytes that appear to be variable */
 
 static HANDLE shm_handle;             /* Handle of the SHM region         */
+
+static HANDLE use_shm_handle;         /* Handle of the use SHM region         */
+char* use_shm_str;
+
 static HANDLE pipe_handle;            /* Handle of the name pipe          */
 static OVERLAPPED pipe_overlapped;    /* Overlapped structure of pipe     */
 
@@ -151,6 +157,7 @@ static char   *fuzzer_id = NULL;      /* The fuzzer ID or a randomized
                                          seed allowing multiple instances */
 static HANDLE devnul_handle;          /* Handle of the nul device         */
 u8     sinkhole_stds = 1;             /* Sink-hole stdout/stderr messages?*/
+u8* shm_sample;
 
 static volatile u8 stop_soon,         /* Ctrl-C pressed?                  */
                    clear_screen = 1,  /* Window resized?                  */
@@ -1250,7 +1257,9 @@ static inline void classify_counts(u32* mem) {
 static void remove_shm(void) {
 
      UnmapViewOfFile(trace_bits);
+	 UnmapViewOfFile(shm_sample);
      CloseHandle(shm_handle);
+	 CloseHandle(use_shm_handle);
 	
 }
 
@@ -1386,6 +1395,44 @@ static void cull_queue(void) {
 
 }
 
+
+static void setup_sample_shm()
+{
+	unsigned int seeds[2];
+	u64 name_seed;
+	if (fuzzer_id == NULL) {
+		// If it is null, it means we have to generate a random seed to name the instance
+		rand_s(&seeds[0]);
+		rand_s(&seeds[1]);
+		name_seed = ((u64)seeds[0] << 32) | seeds[1];
+		fuzzer_id = (char*)alloc_printf("%I64x", name_seed);
+	}
+	use_shm_str = (char*)alloc_printf("use_afl_shm_%s", fuzzer_id);
+	SAYF("use_shm_str:\r\n", use_shm_str);	
+
+	use_shm_handle = CreateFileMapping(
+			INVALID_HANDLE_VALUE,    // use paging file
+			NULL,                    // default security
+			PAGE_READWRITE,          // read/write access
+			0,                       // maximum object size (high-order DWORD)
+			MAX_SAMPLE_SIZE,                // maximum object size (low-order DWORD)
+		use_shm_str);        // name of mapping object
+		
+	if (use_shm_handle == NULL) {
+		FATAL("CreateFileMapping failed doe shm sample, %x", GetLastError());
+	}
+
+	shm_sample = (u8*)MapViewOfFile(
+			use_shm_handle,          // handle to map object
+			FILE_MAP_ALL_ACCESS, // read/write permission
+			0,
+			0,
+			MAX_SAMPLE_SIZE
+		);
+	//ck_free(use_shm_str);
+	if (!shm_sample) PFATAL("shmat() for sample failed");	
+
+}
 
 /* Configure shared memory and virgin_bits. This is called at startup. */
 
@@ -2728,42 +2775,52 @@ static u8 run_target(char** argv, u32 timeout) {
    truncated. */
 
 static void write_to_testcase(void* mem, u32 len) {
+	if (!use_shared_memory)
+	{
+		if (dll_write_to_testcase_ptr) {
+			dll_write_to_testcase_ptr(out_file, out_fd, mem, len);
+			return;
+		}
 
-  if (dll_write_to_testcase_ptr) {
-      dll_write_to_testcase_ptr(out_file, out_fd, mem, len);
-      return;
-  }
+		s32 fd = out_fd;
 
-  s32 fd = out_fd;
+		if (out_file) {
 
-  if (out_file) {
+			unlink(out_file); /* Ignore errors. */
 
-    unlink(out_file); /* Ignore errors. */
+			fd = open(out_file, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, 0600);
 
-    fd = open(out_file, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, 0600);
+			if (fd < 0) {
+				destroy_target_process(0);
 
-    if (fd < 0) {
-      destroy_target_process(0);
-      
-	  unlink(out_file); /* Ignore errors. */
+				unlink(out_file); /* Ignore errors. */
 
-	  fd = open(out_file, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, 0600);
-		
-      if (fd < 0) PFATAL("Unable to create '%s'", out_file);
+				fd = open(out_file, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, 0600);
+				if (fd < 0) PFATAL("Unable to create '%s'", out_file);
 
+			}
+
+		}
+		else lseek(fd, 0, SEEK_SET);
+
+		ck_write(fd, mem, len, out_file);
+
+		if (!out_file) {
+
+			if (_chsize(fd, len)) PFATAL("ftruncate() failed");
+			lseek(fd, 0, SEEK_SET);
+
+		}
+		else close(fd);
 	}
-
-  } else lseek(fd, 0, SEEK_SET);
-
-  ck_write(fd, mem, len, out_file);
-
-  if (!out_file) {
-
-    if (_chsize(fd, len)) PFATAL("ftruncate() failed");
-    lseek(fd, 0, SEEK_SET);
-
-  } else close(fd);
-
+	else
+	{
+		//this writes fuzzed data to shared memory, so that it is available to harnes program.
+		uint32_t* size_ptr = (uint32_t*)shm_sample;
+		unsigned char* data_ptr = shm_sample + 4;
+		*size_ptr = len;
+		memcpy(data_ptr, mem, len);
+	}
 }
 
 
@@ -7328,16 +7385,22 @@ static void setup_dirs_fds(void) {
 
 static void setup_stdio_file(void) {
 
-  u8* fn = alloc_printf("%s\\.cur_input", out_dir);
+	if (!use_shared_memory)
+	{
+		u8* fn = alloc_printf("%s\\.cur_input", out_dir);
 
-  unlink(fn); /* Ignore errors */
+	unlink(fn); /* Ignore errors */
 
-  out_fd = open(fn, O_RDWR | O_BINARY | O_CREAT | O_EXCL, 0600);
+	out_fd = open(fn, O_RDWR | O_BINARY | O_CREAT | O_EXCL, 0600);
 
-  if (out_fd < 0) PFATAL("Unable to create '%s'", fn);
+	if (out_fd < 0) PFATAL("Unable to create '%s'", fn);
 
-  ck_free(fn);
-
+	ck_free(fn);
+	}
+	else
+	{
+		
+	}
 }
 
 
@@ -7618,8 +7681,15 @@ static void detect_file_args(char** argv) {
       /* If we don't have a file name chosen yet, use a safe default. */
 
       if (!out_file)
-        out_file = alloc_printf("%s\\.cur_input", out_dir);
-
+		  if (!use_shared_memory) {
+			  out_file = alloc_printf("%s\\.cur_input", out_dir);
+		  }
+		  else
+		  {
+			  //this sets output file as shared memory name which is used by harness program.
+			  out_file = use_shm_str;
+		  }
+	  
       /* Be sure that we're always using fully-qualified paths. */
 
       //if (out_file[0] == '\\') aa_subst = out_file;
@@ -7869,9 +7939,16 @@ int main(int argc, char** argv) {
   client_params = NULL;
   winafl_dll_path = NULL;
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:I:T:dYnCB:S:M:x:QD:b:l:pPc:w:")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:a:f:m:t:I:T:dYnCB:S:M:x:QD:b:l:pPc:w:")) > 0)
 
     switch (opt) {
+	
+	case 'a':
+		if (use_shared_memory) FATAL("Multiple -i options not supported");
+		use_shared_memory = TRUE;
+		ACTF("using shared memory mode...");
+		break;
+
       case 'i':
 
         if (in_dir) FATAL("Multiple -i options not supported");
@@ -8174,6 +8251,7 @@ int main(int argc, char** argv) {
   } else {
 	  setup_shm();
   }
+  setup_sample_shm();
   init_count_class16();
   child_handle = NULL;
   pipe_handle = NULL;
