@@ -147,6 +147,7 @@ afl-fuzz [afl options] -- [instrumentation options] -- target_cmd_line
 The following afl-fuzz options are supported:
 
 ```
+  -s            - enable shared memory mode.
   -i dir        - input directory with test cases
   -o dir        - output directory for fuzzer findings
   -t msec       - timeout for each run
@@ -211,6 +212,14 @@ modes with WinAFL:
 Before using WinAFL for the first time, you should read the documentation for
 the specific instrumentation mode you are interested in. These also contain
 usage examples.
+
+## Shared memory mode
+
+WinAFL supports shared memory mode. This can be enabled by giving -s option to afl-fuzz.exe.
+If you are using shared memory mode then you need to make sure that in your harness you specifically read data from shared memory/stream instead of file. check a simple harness here:  
+
+https://github.com/googleprojectzero/Jackalope/blob/6d92931b2cf614699e2a023254d5ee7e20f6e34b/test.cpp#L111  
+https://github.com/googleprojectzero/Jackalope/blob/6d92931b2cf614699e2a023254d5ee7e20f6e34b/test.cpp#L41  
 
 ## Corpus minimization
 
