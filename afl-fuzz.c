@@ -67,7 +67,7 @@
 
 /* Lots of globals, but mostly for the status UI and other things where it
    really makes no sense to haul them around as function parameters. */
-BOOL use_shared_memory;
+BOOL use_sample_shared_memory;
 static u8 *in_dir,                    /* Input directory with test cases  */
           *out_file,                  /* File to fuzz, if any             */
           *out_dir,                   /* Working & output directory       */
@@ -147,8 +147,8 @@ static u8  var_bytes[MAP_SIZE];       /* Bytes that appear to be variable */
 
 static HANDLE shm_handle;             /* Handle of the SHM region         */
 
-static HANDLE use_shm_handle;         /* Handle of the use SHM region         */
-char* use_shm_str;
+static HANDLE sample_shm_handle;         /* Handle of the use SHM region         */
+char* sample_shm_str;
 
 static HANDLE pipe_handle;            /* Handle of the name pipe          */
 static OVERLAPPED pipe_overlapped;    /* Overlapped structure of pipe     */
@@ -1259,7 +1259,7 @@ static void remove_shm(void) {
      UnmapViewOfFile(trace_bits);
 	 UnmapViewOfFile(shm_sample);
      CloseHandle(shm_handle);
-	 CloseHandle(use_shm_handle);
+	 CloseHandle(sample_shm_handle);
 	
 }
 
@@ -1407,27 +1407,27 @@ static void setup_sample_shm()
 		name_seed = ((u64)seeds[0] << 32) | seeds[1];
 		fuzzer_id = (char*)alloc_printf("%I64x", name_seed);
 	}
-	use_shm_str = (char*)alloc_printf("use_afl_shm_%s", fuzzer_id);
-	SAYF("use_shm_str:\r\n", use_shm_str);	
+	sample_shm_str = (char*)alloc_printf("sample_afl_shm_%s", fuzzer_id);
+	SAYF("sample_shm_str:\r\n", sample_shm_str);	
 
-	use_shm_handle = CreateFileMapping(
+	sample_shm_handle = CreateFileMapping(
 			INVALID_HANDLE_VALUE,    // use paging file
 			NULL,                    // default security
 			PAGE_READWRITE,          // read/write access
 			0,                       // maximum object size (high-order DWORD)
-			MAX_SAMPLE_SIZE,                // maximum object size (low-order DWORD)
-		use_shm_str);        // name of mapping object
+			MAX_SAMPLE_SIZE + sizeof(uint32_t),                // maximum object size (low-order DWORD)
+		sample_shm_str);        // name of mapping object
 		
-	if (use_shm_handle == NULL) {
+	if (sample_shm_handle == NULL) {
 		FATAL("CreateFileMapping failed doe shm sample, %x", GetLastError());
 	}
 
 	shm_sample = (u8*)MapViewOfFile(
-			use_shm_handle,          // handle to map object
+			sample_shm_handle,          // handle to map object
 			FILE_MAP_ALL_ACCESS, // read/write permission
 			0,
 			0,
-			MAX_SAMPLE_SIZE
+			MAX_SAMPLE_SIZE + sizeof(uint32_t)
 		);
 	//ck_free(use_shm_str);
 	if (!shm_sample) PFATAL("shmat() for sample failed");	
@@ -2775,12 +2775,20 @@ static u8 run_target(char** argv, u32 timeout) {
    truncated. */
 
 static void write_to_testcase(void* mem, u32 len) {
-	if (!use_shared_memory)
-	{
 		if (dll_write_to_testcase_ptr) {
 			dll_write_to_testcase_ptr(out_file, out_fd, mem, len);
 			return;
 		}
+        else if (use_sample_shared_memory)
+        {        
+            //this writes fuzzed data to shared memory, so that it is available to harnes program.
+            uint32_t* size_ptr = (uint32_t*)shm_sample;
+            unsigned char* data_ptr = shm_sample + 4;
+            if (len > MAX_SAMPLE_SIZE) len = MAX_SAMPLE_SIZE;
+            *size_ptr = len;
+            memcpy(data_ptr, mem, len);
+            return;
+        }
 
 		s32 fd = out_fd;
 
@@ -2813,16 +2821,6 @@ static void write_to_testcase(void* mem, u32 len) {
 		}
 		else close(fd);
 	}
-	else
-	{
-		//this writes fuzzed data to shared memory, so that it is available to harnes program.
-		uint32_t* size_ptr = (uint32_t*)shm_sample;
-		unsigned char* data_ptr = shm_sample + 4;
-		*size_ptr = len;
-		memcpy(data_ptr, mem, len);
-	}
-}
-
 
 /* The same, but with an adjustable gap. Used for trimming. */
 
@@ -7385,8 +7383,11 @@ static void setup_dirs_fds(void) {
 
 static void setup_stdio_file(void) {
 
-	if (!use_shared_memory)
-	{
+    if (use_sample_shared_memory)
+    {
+        // if using shared memory we dont need to set any file.so we just return.
+        return;
+    }
 		u8* fn = alloc_printf("%s\\.cur_input", out_dir);
 
 	unlink(fn); /* Ignore errors */
@@ -7395,12 +7396,7 @@ static void setup_stdio_file(void) {
 
 	if (out_fd < 0) PFATAL("Unable to create '%s'", fn);
 
-	ck_free(fn);
-	}
-	else
-	{
-		
-	}
+	ck_free(fn);		
 }
 
 
@@ -7681,13 +7677,13 @@ static void detect_file_args(char** argv) {
       /* If we don't have a file name chosen yet, use a safe default. */
 
       if (!out_file)
-		  if (!use_shared_memory) {
+		  if (!use_sample_shared_memory) {
 			  out_file = alloc_printf("%s\\.cur_input", out_dir);
 		  }
 		  else
 		  {
 			  //this sets output file as shared memory name which is used by harness program.
-			  out_file = use_shm_str;
+			  out_file = sample_shm_str;
 		  }
 	  
       /* Be sure that we're always using fully-qualified paths. */
@@ -7912,156 +7908,156 @@ void load_custom_library(const char *libname)
 /* Main entry point */
 int main(int argc, char** argv) {
 
-  s32 opt;
-  u64 prev_queued = 0;
-  u32 sync_interval_cnt = 0, seek_to;
-  u8  *extras_dir = 0;
-  u8  mem_limit_given = 0;
+    s32 opt;
+    u64 prev_queued = 0;
+    u32 sync_interval_cnt = 0, seek_to;
+    u8* extras_dir = 0;
+    u8  mem_limit_given = 0;
 
-  char** use_argv;
+    char** use_argv;
 
-  setup_watchdog_timer();
+    setup_watchdog_timer();
 
 #ifdef USE_COLOR
-  enable_ansi_console();
+    enable_ansi_console();
 #endif
 
-  SAYF("WinAFL " WINAFL_VERSION " by <ifratric@google.com>\n");
-  SAYF("Based on AFL " cBRI VERSION cRST " by <lcamtuf@google.com>\n");
+    SAYF("WinAFL " WINAFL_VERSION " by <ifratric@google.com>\n");
+    SAYF("Based on AFL " cBRI VERSION cRST " by <lcamtuf@google.com>\n");
 
-  doc_path = "afl_docs";
+    doc_path = "afl_docs";
 
-  optind = 1;
+    optind = 1;
 
-  in_dir = NULL;
-  out_dir = NULL;
-  dynamorio_dir = NULL;
-  client_params = NULL;
-  winafl_dll_path = NULL;
+    in_dir = NULL;
+    out_dir = NULL;
+    dynamorio_dir = NULL;
+    client_params = NULL;
+    winafl_dll_path = NULL;
 
-  while ((opt = getopt(argc, argv, "+i:o:a:f:m:t:I:T:dYnCB:S:M:x:QD:b:l:pPc:w:")) > 0)
+    while ((opt = getopt(argc, argv, "+i:o:f:m:t:I:T:sdYnCB:S:M:x:QD:b:l:pPc:w:")) > 0)
 
-    switch (opt) {
-	
-	case 'a':
-		if (use_shared_memory) FATAL("Multiple -i options not supported");
-		use_shared_memory = TRUE;
-		ACTF("using shared memory mode...");
-		break;
+        switch (opt) {
 
-      case 'i':
-
-        if (in_dir) FATAL("Multiple -i options not supported");
-        in_dir = optarg;
-
-        if (!strcmp(in_dir, "-")) in_place_resume = 1;
-
-        break;
-
-      case 'o': /* output dir */
-
-        if (out_dir) FATAL("Multiple -o options not supported");
-        out_dir = optarg;
-        break;
-
-      case 'w': /* winafl.dll path */
-
-        if (winafl_dll_path) FATAL("Multiple -w options not supported");
-        winafl_dll_path = optarg;
-        break;
-
-      case 'D': /* dynamorio dir */
-
-        if (dynamorio_dir) FATAL("Multiple -D options not supported");
-        dynamorio_dir = optarg;
-        break;
-
-      case 'M': { /* master sync ID */
-
-          u8* c;
-
-          if (sync_id) FATAL("Multiple -S or -M options not supported");
-          sync_id = optarg;
-
-          if ((c = strchr(sync_id, ':'))) {
-
-            *c = 0;
-
-            if (sscanf(c + 1, "%u/%u", &master_id, &master_max) != 2 ||
-                !master_id || !master_max || master_id > master_max ||
-                master_max > 1000000) FATAL("Bogus master ID passed to -M");
-
-          }
-
-          force_deterministic = 1;
-          fuzzer_id = sync_id;
-
-        }
-        break;
-
-      case 'S':
-
-        if (sync_id) FATAL("Multiple -S or -M options not supported");
-        sync_id = ck_strdup(optarg);
-        break;
-
-      case 'f': /* target file */
-
-        if (out_file) FATAL("Multiple -f options not supported");
-        out_file = optarg;
-        break;
-
-      case 'x':
-
-        if (extras_dir) FATAL("Multiple -x options not supported");
-        extras_dir = optarg;
-        break;
-
-      case 't': {
-
-          u8 suffix = 0;
-
-          if (timeout_given) FATAL("Multiple -t options not supported");
-
-          if (sscanf(optarg, "%u%c", &exec_tmout, &suffix) < 1 ||
-              optarg[0] == '-') FATAL("Bad syntax used for -t");
-
-          if (exec_tmout < 5) FATAL("Dangerously low value of -t");
-
-          if (suffix == '+') timeout_given = 2; else timeout_given = 1;
-
-          break;
-
-      }
-
-      case 'I': {
-
-        if (sscanf(optarg, "%u", &init_tmout) < 1) FATAL("Bad syntax used for -I");
-
-        if (init_tmout < 5) FATAL("Dangerously low value of -I");
-
-        break;
-
-      }
-
-      case 'm': {
-
-          u8 suffix = 'M';
-
-          if (mem_limit_given) FATAL("Multiple -m options not supported");
-          mem_limit_given = 1;
-
-          if (!strcmp(optarg, "none")) {
-
-            mem_limit = 0;
+        case 's':
+            if (use_sample_shared_memory) FATAL("Multiple -s options not supported");
+            use_sample_shared_memory = TRUE;
+            ACTF("using shared memory mode...");
             break;
 
-          }
+        case 'i':
 
-          if (sscanf(optarg, "%llu%c", &mem_limit, &suffix) < 1 ||
-              optarg[0] == '-') FATAL("Bad syntax used for -m");
+            if (in_dir) FATAL("Multiple -i options not supported");
+            in_dir = optarg;
 
-          switch (suffix) {
+            if (!strcmp(in_dir, "-")) in_place_resume = 1;
+
+            break;
+
+        case 'o': /* output dir */
+
+            if (out_dir) FATAL("Multiple -o options not supported");
+            out_dir = optarg;
+            break;
+
+        case 'w': /* winafl.dll path */
+
+            if (winafl_dll_path) FATAL("Multiple -w options not supported");
+            winafl_dll_path = optarg;
+            break;
+
+        case 'D': /* dynamorio dir */
+
+            if (dynamorio_dir) FATAL("Multiple -D options not supported");
+            dynamorio_dir = optarg;
+            break;
+
+        case 'M': { /* master sync ID */
+
+            u8* c;
+
+            if (sync_id) FATAL("Multiple -S or -M options not supported");
+            sync_id = optarg;
+
+            if ((c = strchr(sync_id, ':'))) {
+
+                *c = 0;
+
+                if (sscanf(c + 1, "%u/%u", &master_id, &master_max) != 2 ||
+                    !master_id || !master_max || master_id > master_max ||
+                    master_max > 1000000) FATAL("Bogus master ID passed to -M");
+
+            }
+
+            force_deterministic = 1;
+            fuzzer_id = sync_id;
+
+        }
+                break;
+
+        case 'S':
+
+            if (sync_id) FATAL("Multiple -S or -M options not supported");
+            sync_id = ck_strdup(optarg);
+            break;
+
+        case 'f': /* target file */
+
+            if (out_file) FATAL("Multiple -f options not supported");
+            out_file = optarg;
+            break;
+
+        case 'x':
+
+            if (extras_dir) FATAL("Multiple -x options not supported");
+            extras_dir = optarg;
+            break;
+
+        case 't': {
+
+            u8 suffix = 0;
+
+            if (timeout_given) FATAL("Multiple -t options not supported");
+
+            if (sscanf(optarg, "%u%c", &exec_tmout, &suffix) < 1 ||
+                optarg[0] == '-') FATAL("Bad syntax used for -t");
+
+            if (exec_tmout < 5) FATAL("Dangerously low value of -t");
+
+            if (suffix == '+') timeout_given = 2; else timeout_given = 1;
+
+            break;
+
+        }
+
+        case 'I': {
+
+            if (sscanf(optarg, "%u", &init_tmout) < 1) FATAL("Bad syntax used for -I");
+
+            if (init_tmout < 5) FATAL("Dangerously low value of -I");
+
+            break;
+
+        }
+
+        case 'm': {
+
+            u8 suffix = 'M';
+
+            if (mem_limit_given) FATAL("Multiple -m options not supported");
+            mem_limit_given = 1;
+
+            if (!strcmp(optarg, "none")) {
+
+                mem_limit = 0;
+                break;
+
+            }
+
+            if (sscanf(optarg, "%llu%c", &mem_limit, &suffix) < 1 ||
+                optarg[0] == '-') FATAL("Bad syntax used for -m");
+
+            switch (suffix) {
 
             case 'T': mem_limit *= 1024 * 1024; break;
             case 'G': mem_limit *= 1024; break;
@@ -8070,188 +8066,194 @@ int main(int argc, char** argv) {
 
             default:  FATAL("Unsupported suffix or bad syntax for -m");
 
-          }
+            }
 
-          if (mem_limit < 5) FATAL("Dangerously low value of -m");
+            if (mem_limit < 5) FATAL("Dangerously low value of -m");
 
-          break;
-      }
-
-      case 'd':
-
-        if (skip_deterministic) FATAL("Multiple -d options not supported");
-        skip_deterministic = 1;
-        use_splicing = 1;
-        break;
-
-      case 'B':
-
-        /* This is a secret undocumented option! It is useful if you find
-           an interesting test case during a normal fuzzing process, and want
-           to mutate it without rediscovering any of the test cases already
-           found during an earlier run.
-
-           To use this mode, you need to point -B to the fuzz_bitmap produced
-           by an earlier run for the exact same binary... and that's it.
-
-           I only used this once or twice to get variants of a particular
-           file, so I'm not making this an official setting. */
-
-        if (in_bitmap) FATAL("Multiple -B options not supported");
-
-        in_bitmap = optarg;
-        read_bitmap(in_bitmap);
-        break;
-
-      case 'C':
-
-        if (crash_mode) FATAL("Multiple -C options not supported");
-        crash_mode = FAULT_CRASH;
-        break;
-
-      case 'n':
-
-        if (dumb_mode) FATAL("Multiple -n options not supported");
-        if (getenv("AFL_DUMB_FORKSRV")) dumb_mode = 2; else dumb_mode = 1;
-
-        break;
-
-      case 'T':
-
-        if (use_banner) FATAL("Multiple -T options not supported");
-        use_banner = optarg;
-        break;
-
-      case 'Q':
-
-        if (qemu_mode) FATAL("Multiple -Q options not supported");
-        qemu_mode = 1;
-
-        if (!mem_limit_given) mem_limit = MEM_LIMIT_QEMU;
-
-        break;
-
-      case 'Y':
-
-        if (dynamorio_dir) FATAL("Dynamic-instrumentation via DRIO is uncompatible with static-instrumentation");
-        drioless = 1;
-
-        break;
-
-      case 'l':
-        custom_dll_defined = 1;
-        load_custom_library(optarg);
-
-        break;
-
-	  case 'p':
-		  persist_dr_cache = 1;
-
-		  break;
-
-	  case 'P':
-#ifdef INTELPT
-		  use_intelpt = 1;
-#else
-		  FATAL("afl-fuzz was not compiled with Intel PT support");
-#endif
-
-		  break;
-
-      case 'c':
-
-        if (getenv("AFL_NO_AFFINITY")) FATAL("-c and AFL_NO_AFFINITY are mutually exclusive.");
-
-        if (cpu_aff) {
-          FATAL("Multiple -c options not supported");
-        } else {
-          int cpunum = 0;
-
-          if (sscanf(optarg, "%d", &cpunum) < 1 ||
-              cpunum < 0) FATAL("Bad syntax used for -c");
-
-          if (cpunum >= 64)
-            FATAL("Uh-oh, winafl doesn't support more than 64 cores at the moment\n");
-
-          cpu_aff = 1ULL << cpunum;
+            break;
         }
 
-        break;
+        case 'd':
 
-      default:
+            if (skip_deterministic) FATAL("Multiple -d options not supported");
+            skip_deterministic = 1;
+            use_splicing = 1;
+            break;
 
-        usage(argv[0]);
+        case 'B':
+
+            /* This is a secret undocumented option! It is useful if you find
+               an interesting test case during a normal fuzzing process, and want
+               to mutate it without rediscovering any of the test cases already
+               found during an earlier run.
+
+               To use this mode, you need to point -B to the fuzz_bitmap produced
+               by an earlier run for the exact same binary... and that's it.
+
+               I only used this once or twice to get variants of a particular
+               file, so I'm not making this an official setting. */
+
+            if (in_bitmap) FATAL("Multiple -B options not supported");
+
+            in_bitmap = optarg;
+            read_bitmap(in_bitmap);
+            break;
+
+        case 'C':
+
+            if (crash_mode) FATAL("Multiple -C options not supported");
+            crash_mode = FAULT_CRASH;
+            break;
+
+        case 'n':
+
+            if (dumb_mode) FATAL("Multiple -n options not supported");
+            if (getenv("AFL_DUMB_FORKSRV")) dumb_mode = 2; else dumb_mode = 1;
+
+            break;
+
+        case 'T':
+
+            if (use_banner) FATAL("Multiple -T options not supported");
+            use_banner = optarg;
+            break;
+
+        case 'Q':
+
+            if (qemu_mode) FATAL("Multiple -Q options not supported");
+            qemu_mode = 1;
+
+            if (!mem_limit_given) mem_limit = MEM_LIMIT_QEMU;
+
+            break;
+
+        case 'Y':
+
+            if (dynamorio_dir) FATAL("Dynamic-instrumentation via DRIO is uncompatible with static-instrumentation");
+            drioless = 1;
+
+            break;
+
+        case 'l':
+            custom_dll_defined = 1;
+            load_custom_library(optarg);
+
+            break;
+
+        case 'p':
+            persist_dr_cache = 1;
+
+            break;
+
+        case 'P':
+#ifdef INTELPT
+            use_intelpt = 1;
+#else
+            FATAL("afl-fuzz was not compiled with Intel PT support");
+#endif
+
+            break;
+
+        case 'c':
+
+            if (getenv("AFL_NO_AFFINITY")) FATAL("-c and AFL_NO_AFFINITY are mutually exclusive.");
+
+            if (cpu_aff) {
+                FATAL("Multiple -c options not supported");
+            }
+            else {
+                int cpunum = 0;
+
+                if (sscanf(optarg, "%d", &cpunum) < 1 ||
+                    cpunum < 0) FATAL("Bad syntax used for -c");
+
+                if (cpunum >= 64)
+                    FATAL("Uh-oh, winafl doesn't support more than 64 cores at the moment\n");
+
+                cpu_aff = 1ULL << cpunum;
+            }
+
+            break;
+
+        default:
+
+            usage(argv[0]);
+
+        }
+
+    if (!in_dir || !out_dir || !timeout_given || (!drioless && !dynamorio_dir && !use_intelpt)) usage(argv[0]);
+
+    if (!winafl_dll_path) {
+        winafl_dll_path = "winafl.dll";
+    }
+
+    setup_signal_handlers();
+    check_asan_opts();
+
+    if (sync_id) fix_up_sync();
+
+    if (use_intelpt) {
+#ifdef INTELPT
+        char* modules_dir = alloc_printf("%s\\ptmodules", out_dir);
+        int pt_options = pt_init(argc - optind, argv + optind, modules_dir);
+        ck_free(modules_dir);
+        if (!pt_options) usage(argv[0]);
+        optind += pt_options;
+#endif
+    }
+    else {
+        extract_client_params(argc, argv);
+    }
+    optind++;
+
+    if (!strcmp(in_dir, out_dir))
+        FATAL("Input and output directories can't be the same");
+
+    if (dumb_mode) {
+
+        if (crash_mode) FATAL("-C and -n are mutually exclusive");
+        if (qemu_mode)  FATAL("-Q and -n are mutually exclusive");
 
     }
 
-  if (!in_dir || !out_dir || !timeout_given || (!drioless && !dynamorio_dir && !use_intelpt)) usage(argv[0]);
+    if (getenv("AFL_NO_FORKSRV"))    no_forkserver = 1;
+    if (getenv("AFL_NO_CPU_RED"))    no_cpu_meter_red = 1;
+    if (getenv("AFL_NO_ARITH"))      no_arith = 1;
+    if (getenv("AFL_SHUFFLE_QUEUE")) shuffle_queue = 1;
+    if (getenv("AFL_NO_SINKHOLE"))   sinkhole_stds = 0;
 
-  if (!winafl_dll_path) {
-    winafl_dll_path = "winafl.dll";
-  }
+    if (dumb_mode == 2 && no_forkserver)
+        FATAL("AFL_DUMB_FORKSRV and AFL_NO_FORKSRV are mutually exclusive");
 
-  setup_signal_handlers();
-  check_asan_opts();
+    save_cmdline(argc, argv);
 
-  if (sync_id) fix_up_sync();
+    fix_up_banner(argv[optind]);
 
-  if (use_intelpt) {
-#ifdef INTELPT
-	  char *modules_dir = alloc_printf("%s\\ptmodules", out_dir);
-	  int pt_options = pt_init(argc - optind, argv + optind, modules_dir);
-	  ck_free(modules_dir);
-	  if (!pt_options) usage(argv[0]);
-	  optind += pt_options;
-#endif
-  } else {
-	  extract_client_params(argc, argv);
-  }
-  optind++;
-  
-  if (!strcmp(in_dir, out_dir))
-    FATAL("Input and output directories can't be the same");
+    check_if_tty();
 
-  if (dumb_mode) {
+    get_core_count();
 
-    if (crash_mode) FATAL("-C and -n are mutually exclusive");
-    if (qemu_mode)  FATAL("-Q and -n are mutually exclusive");
+    bind_to_free_cpu();
 
-  }
+    check_crash_handling();
+    check_cpu_governor();
 
-  if (getenv("AFL_NO_FORKSRV"))    no_forkserver    = 1;
-  if (getenv("AFL_NO_CPU_RED"))    no_cpu_meter_red = 1;
-  if (getenv("AFL_NO_ARITH"))      no_arith = 1;
-  if (getenv("AFL_SHUFFLE_QUEUE")) shuffle_queue    = 1;
-  if (getenv("AFL_NO_SINKHOLE"))   sinkhole_stds    = 0;
+    setup_post();
 
-  if (dumb_mode == 2 && no_forkserver)
-    FATAL("AFL_DUMB_FORKSRV and AFL_NO_FORKSRV are mutually exclusive");
+    if (!in_bitmap) memset(virgin_bits, 255, MAP_SIZE);
+    memset(virgin_tmout, 255, MAP_SIZE);
+    memset(virgin_crash, 255, MAP_SIZE);
 
-  save_cmdline(argc, argv);
-
-  fix_up_banner(argv[optind]);
-
-  check_if_tty();
-
-  get_core_count();
-
-  bind_to_free_cpu();
-
-  check_crash_handling();
-  check_cpu_governor();
-
-  setup_post();
-
-  if (!in_bitmap) memset(virgin_bits, 255, MAP_SIZE);
-  memset(virgin_tmout, 255, MAP_SIZE);
-  memset(virgin_crash, 255, MAP_SIZE);
-
-  if (use_intelpt) {
-	  trace_bits = VirtualAlloc(0, MAP_SIZE, MEM_COMMIT, PAGE_READWRITE);
-  } else {
-	  setup_shm();
-  }
-  setup_sample_shm();
+    if (use_intelpt) {
+        trace_bits = VirtualAlloc(0, MAP_SIZE, MEM_COMMIT, PAGE_READWRITE);
+    }
+    else {
+        setup_shm();
+    }
+    if (use_sample_shared_memory)
+    {
+        setup_sample_shm();
+    }
   init_count_class16();
   child_handle = NULL;
   pipe_handle = NULL;
