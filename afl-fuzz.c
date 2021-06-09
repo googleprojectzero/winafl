@@ -8250,8 +8250,7 @@ int main(int argc, char** argv) {
     else {
         setup_shm();
     }
-    if (use_sample_shared_memory)
-    {
+    if (use_sample_shared_memory){
         setup_sample_shm();
     }
   init_count_class16();
