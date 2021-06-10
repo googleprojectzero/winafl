@@ -1256,13 +1256,13 @@ static inline void classify_counts(u32* mem) {
 
 static void remove_shm(void) {
 
-  	UnmapViewOfFile(trace_bits);
-  	CloseHandle(shm_handle);
+     UnmapViewOfFile(trace_bits);
+  	 CloseHandle(shm_handle);
      	
-	if (use_sample_shared_memory) {
-	 	UnmapViewOfFile(shm_sample);	
-	  CloseHandle(sample_shm_handle);
-	}
+	 if (use_sample_shared_memory) {
+	   UnmapViewOfFile(shm_sample);	
+	   CloseHandle(sample_shm_handle);
+	 }
 	
 }
 
@@ -2733,7 +2733,7 @@ static u8 run_target(char** argv, u32 timeout) {
 	  MemoryBarrier();
 	  watchdog_enabled = 0;
 
-	  destroy_target_process(0);
+      destroy_target_process(0);
       return FAULT_TMOUT;
   }
   if (result != 'P')
@@ -2778,25 +2778,21 @@ static u8 run_target(char** argv, u32 timeout) {
    truncated. */
 
 static void write_to_testcase(void* mem, u32 len) {
-  
-  if (dll_write_to_testcase_ptr) {
-	  
-    dll_write_to_testcase_ptr(out_file, out_fd, mem, len);
-	  return;
-  
-  } else if(use_sample_shared_memory) {        
-     //this writes fuzzed data to shared memory, so that it is available to harnes program.
-     uint32_t* size_ptr = (uint32_t*)shm_sample;
+
+  if (dll_write_to_testcase_ptr) {	  
+      dll_write_to_testcase_ptr(out_file, out_fd, mem, len);
+      return;
+  } else if (use_sample_shared_memory) {        
+      //this writes fuzzed data to shared memory, so that it is available to harnes program.
+      uint32_t* size_ptr = (uint32_t*)shm_sample;
+      unsigned char* data_ptr = shm_sample + 4;
      
-     unsigned char* data_ptr = shm_sample + 4;
+      if (len > MAX_SAMPLE_SIZE) len = MAX_SAMPLE_SIZE;
      
-     if (len > MAX_SAMPLE_SIZE) len = MAX_SAMPLE_SIZE;
+      *size_ptr = len;
+      memcpy(data_ptr, mem, len);
      
-     *size_ptr = len;
-     
-     memcpy(data_ptr, mem, len);
-     
-     return;
+      return;
     }
 
   s32 fd = out_fd;
@@ -7393,10 +7389,11 @@ static void setup_dirs_fds(void) {
 
 static void setup_stdio_file(void) {
 
-  if (use_sample_shared_memory){
-      // if using shared memory we dont need to set any file.so we just return.
-      return;
+  if (use_sample_shared_memory) {
+    // if using shared memory we dont need to set any file.so we just return.
+    return;
   }
+  
   u8* fn = alloc_printf("%s\\.cur_input", out_dir);
 
   unlink(fn); /* Ignore errors */
