@@ -1256,10 +1256,13 @@ static inline void classify_counts(u32* mem) {
 
 static void remove_shm(void) {
 
-     UnmapViewOfFile(trace_bits);
-	 UnmapViewOfFile(shm_sample);
-     CloseHandle(shm_handle);
-	 CloseHandle(sample_shm_handle);
+  	UnmapViewOfFile(trace_bits);
+  	CloseHandle(shm_handle);
+     	
+	if (use_sample_shared_memory) {
+	 	UnmapViewOfFile(shm_sample);	
+	  CloseHandle(sample_shm_handle);
+	}
 	
 }
 
@@ -1396,19 +1399,19 @@ static void cull_queue(void) {
 }
 
 
-static void setup_sample_shm()
-{
-	unsigned int seeds[2];
-	u64 name_seed;
-	if (fuzzer_id == NULL) {
-		// If it is null, it means we have to generate a random seed to name the instance
-		rand_s(&seeds[0]);
-		rand_s(&seeds[1]);
-		name_seed = ((u64)seeds[0] << 32) | seeds[1];
-		fuzzer_id = (char*)alloc_printf("%I64x", name_seed);
-	}
-	sample_shm_str = (char*)alloc_printf("sample_afl_shm_%s", fuzzer_id);
-	SAYF("sample_shm_str:\r\n", sample_shm_str);	
+static void setup_sample_shm() {
+	 unsigned int seeds[2];
+	 u64 name_seed;
+	 if (fuzzer_id == NULL) {
+	   // If it is null, it means we have to generate a random seed to name the instance
+		 rand_s(&seeds[0]);
+		 rand_s(&seeds[1]);
+		 name_seed = ((u64)seeds[0] << 32) | seeds[1];
+		 fuzzer_id = (char*)alloc_printf("%I64x", name_seed);
+	 }
+	
+  sample_shm_str = (char*)alloc_printf("sample_afl_shm_%s", fuzzer_id);
+	//SAYF("sample_shm_str:\r\n", sample_shm_str);	
 
 	sample_shm_handle = CreateFileMapping(
 			INVALID_HANDLE_VALUE,    // use paging file
@@ -1416,7 +1419,7 @@ static void setup_sample_shm()
 			PAGE_READWRITE,          // read/write access
 			0,                       // maximum object size (high-order DWORD)
 			MAX_SAMPLE_SIZE + sizeof(uint32_t),                // maximum object size (low-order DWORD)
-		sample_shm_str);        // name of mapping object
+		  sample_shm_str);        // name of mapping object
 		
 	if (sample_shm_handle == NULL) {
 		FATAL("CreateFileMapping failed doe shm sample, %x", GetLastError());
@@ -2730,7 +2733,7 @@ static u8 run_target(char** argv, u32 timeout) {
 	  MemoryBarrier();
 	  watchdog_enabled = 0;
 
-      destroy_target_process(0);
+	  destroy_target_process(0);
       return FAULT_TMOUT;
   }
   if (result != 'P')
@@ -2775,22 +2778,28 @@ static u8 run_target(char** argv, u32 timeout) {
    truncated. */
 
 static void write_to_testcase(void* mem, u32 len) {
-		if (dll_write_to_testcase_ptr) {
-			dll_write_to_testcase_ptr(out_file, out_fd, mem, len);
-			return;
-		}
-        else if (use_sample_shared_memory)
-        {        
-            //this writes fuzzed data to shared memory, so that it is available to harnes program.
-            uint32_t* size_ptr = (uint32_t*)shm_sample;
-            unsigned char* data_ptr = shm_sample + 4;
-            if (len > MAX_SAMPLE_SIZE) len = MAX_SAMPLE_SIZE;
-            *size_ptr = len;
-            memcpy(data_ptr, mem, len);
-            return;
-        }
+  
+  if (dll_write_to_testcase_ptr) {
+	  
+    dll_write_to_testcase_ptr(out_file, out_fd, mem, len);
+	  return;
+  
+  } else if(use_sample_shared_memory) {        
+     //this writes fuzzed data to shared memory, so that it is available to harnes program.
+     uint32_t* size_ptr = (uint32_t*)shm_sample;
+     
+     unsigned char* data_ptr = shm_sample + 4;
+     
+     if (len > MAX_SAMPLE_SIZE) len = MAX_SAMPLE_SIZE;
+     
+     *size_ptr = len;
+     
+     memcpy(data_ptr, mem, len);
+     
+     return;
+    }
 
-		s32 fd = out_fd;
+  s32 fd = out_fd;
 
   if (out_file) {
 
@@ -7384,20 +7393,19 @@ static void setup_dirs_fds(void) {
 
 static void setup_stdio_file(void) {
 
-    if (use_sample_shared_memory)
-    {
-        // if using shared memory we dont need to set any file.so we just return.
-        return;
-    }
-		u8* fn = alloc_printf("%s\\.cur_input", out_dir);
+  if (use_sample_shared_memory){
+      // if using shared memory we dont need to set any file.so we just return.
+      return;
+  }
+  u8* fn = alloc_printf("%s\\.cur_input", out_dir);
 
-  	unlink(fn); /* Ignore errors */
+  unlink(fn); /* Ignore errors */
 
-  	out_fd = open(fn, O_RDWR | O_BINARY | O_CREAT | O_EXCL, 0600);
+  out_fd = open(fn, O_RDWR | O_BINARY | O_CREAT | O_EXCL, 0600);
 
-  	if (out_fd < 0) PFATAL("Unable to create '%s'", fn);
+  if (out_fd < 0) PFATAL("Unable to create '%s'", fn);
 
-  	ck_free(fn);
+  ck_free(fn);
 
 }
 
@@ -7681,11 +7689,9 @@ static void detect_file_args(char** argv) {
       if (!out_file)
 		  if (!use_sample_shared_memory) {
 			  out_file = alloc_printf("%s\\.cur_input", out_dir);
-		  }
-		  else
-		  {
-			  //this sets output file as shared memory name which is used by harness program.
-			  out_file = sample_shm_str;
+		  } else {
+			    //this sets output file as shared memory name which is used by harness program.
+			    out_file = sample_shm_str;
 		  }
 	  
       /* Be sure that we're always using fully-qualified paths. */
@@ -7931,23 +7937,23 @@ int main(int argc, char** argv) {
 
   optind = 1;
 
-   in_dir = NULL;
-   out_dir = NULL;
-   dynamorio_dir = NULL;
-   client_params = NULL;
-    winafl_dll_path = NULL;
+  in_dir = NULL;
+  out_dir = NULL;
+  dynamorio_dir = NULL;
+  client_params = NULL;
+  winafl_dll_path = NULL;
 
-    while ((opt = getopt(argc, argv, "+i:o:f:m:t:I:T:sdYnCB:S:M:x:QD:b:l:pPc:w:")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:t:I:T:sdYnCB:S:M:x:QD:b:l:pPc:w:")) > 0)
 
-        switch (opt) {
+    switch (opt) {
+      case 's':
+        
+        if (use_sample_shared_memory) FATAL("Multiple -s options not supported");
+        use_sample_shared_memory = TRUE;
+        ACTF("using shared memory mode...");
+        break;
 
-        case 's':
-            if (use_sample_shared_memory) FATAL("Multiple -s options not supported");
-            use_sample_shared_memory = TRUE;
-            ACTF("using shared memory mode...");
-            break;
-
-        case 'i':
+      case 'i':
 
         if (in_dir) FATAL("Multiple -i options not supported");
         in_dir = optarg;
@@ -8249,10 +8255,11 @@ int main(int argc, char** argv) {
   } else {
 	  setup_shm();
   }
-    if (use_sample_shared_memory)
-    {
-        setup_sample_shm();
-    }
+  
+  if (use_sample_shared_memory) {
+    setup_sample_shm();
+  }
+  
   init_count_class16();
   child_handle = NULL;
   pipe_handle = NULL;
