@@ -67,7 +67,7 @@
 
 /* Lots of globals, but mostly for the status UI and other things where it
    really makes no sense to haul them around as function parameters. */
-BOOL use_sample_shared_memory;
+BOOL use_sample_shared_memory = FALSE;
 static u8 *in_dir,                    /* Input directory with test cases  */
           *out_file,                  /* File to fuzz, if any             */
           *out_dir,                   /* Working & output directory       */
@@ -2792,35 +2792,36 @@ static void write_to_testcase(void* mem, u32 len) {
 
 		s32 fd = out_fd;
 
-		if (out_file) {
+  if (out_file) {
 
-			unlink(out_file); /* Ignore errors. */
+    unlink(out_file); /* Ignore errors. */
 
-			fd = open(out_file, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, 0600);
+    fd = open(out_file, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, 0600);
 
-			if (fd < 0) {
-				destroy_target_process(0);
+    if (fd < 0) {
+      destroy_target_process(0);
+      
+	  unlink(out_file); /* Ignore errors. */
 
-				unlink(out_file); /* Ignore errors. */
+	  fd = open(out_file, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, 0600);
+		
+      if (fd < 0) PFATAL("Unable to create '%s'", out_file);
 
-				fd = open(out_file, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, 0600);
-				if (fd < 0) PFATAL("Unable to create '%s'", out_file);
-
-			}
-
-		}
-		else lseek(fd, 0, SEEK_SET);
-
-		ck_write(fd, mem, len, out_file);
-
-		if (!out_file) {
-
-			if (_chsize(fd, len)) PFATAL("ftruncate() failed");
-			lseek(fd, 0, SEEK_SET);
-
-		}
-		else close(fd);
 	}
+
+  } else lseek(fd, 0, SEEK_SET);
+
+  ck_write(fd, mem, len, out_file);
+
+  if (!out_file) {
+
+    if (_chsize(fd, len)) PFATAL("ftruncate() failed");
+    lseek(fd, 0, SEEK_SET);
+
+  } else close(fd);
+
+}
+
 
 /* The same, but with an adjustable gap. Used for trimming. */
 
@@ -7390,13 +7391,14 @@ static void setup_stdio_file(void) {
     }
 		u8* fn = alloc_printf("%s\\.cur_input", out_dir);
 
-	unlink(fn); /* Ignore errors */
+  	unlink(fn); /* Ignore errors */
 
-	out_fd = open(fn, O_RDWR | O_BINARY | O_CREAT | O_EXCL, 0600);
+  	out_fd = open(fn, O_RDWR | O_BINARY | O_CREAT | O_EXCL, 0600);
 
-	if (out_fd < 0) PFATAL("Unable to create '%s'", fn);
+  	if (out_fd < 0) PFATAL("Unable to create '%s'", fn);
 
-	ck_free(fn);		
+  	ck_free(fn);
+
 }
 
 
@@ -7908,31 +7910,31 @@ void load_custom_library(const char *libname)
 /* Main entry point */
 int main(int argc, char** argv) {
 
-    s32 opt;
-    u64 prev_queued = 0;
-    u32 sync_interval_cnt = 0, seek_to;
-    u8* extras_dir = 0;
-    u8  mem_limit_given = 0;
+  s32 opt;
+  u64 prev_queued = 0;
+  u32 sync_interval_cnt = 0, seek_to;
+  u8  *extras_dir = 0;
+  u8  mem_limit_given = 0;
 
-    char** use_argv;
+  char** use_argv;
 
-    setup_watchdog_timer();
+  setup_watchdog_timer();
 
 #ifdef USE_COLOR
-    enable_ansi_console();
+  enable_ansi_console();
 #endif
 
-    SAYF("WinAFL " WINAFL_VERSION " by <ifratric@google.com>\n");
-    SAYF("Based on AFL " cBRI VERSION cRST " by <lcamtuf@google.com>\n");
+  SAYF("WinAFL " WINAFL_VERSION " by <ifratric@google.com>\n");
+  SAYF("Based on AFL " cBRI VERSION cRST " by <lcamtuf@google.com>\n");
 
-    doc_path = "afl_docs";
+  doc_path = "afl_docs";
 
-    optind = 1;
+  optind = 1;
 
-    in_dir = NULL;
-    out_dir = NULL;
-    dynamorio_dir = NULL;
-    client_params = NULL;
+   in_dir = NULL;
+   out_dir = NULL;
+   dynamorio_dir = NULL;
+   client_params = NULL;
     winafl_dll_path = NULL;
 
     while ((opt = getopt(argc, argv, "+i:o:f:m:t:I:T:sdYnCB:S:M:x:QD:b:l:pPc:w:")) > 0)
@@ -7947,117 +7949,117 @@ int main(int argc, char** argv) {
 
         case 'i':
 
-            if (in_dir) FATAL("Multiple -i options not supported");
-            in_dir = optarg;
+        if (in_dir) FATAL("Multiple -i options not supported");
+        in_dir = optarg;
 
-            if (!strcmp(in_dir, "-")) in_place_resume = 1;
+        if (!strcmp(in_dir, "-")) in_place_resume = 1;
 
-            break;
+        break;
 
-        case 'o': /* output dir */
+      case 'o': /* output dir */
 
-            if (out_dir) FATAL("Multiple -o options not supported");
-            out_dir = optarg;
-            break;
+        if (out_dir) FATAL("Multiple -o options not supported");
+        out_dir = optarg;
+        break;
 
-        case 'w': /* winafl.dll path */
+      case 'w': /* winafl.dll path */
 
-            if (winafl_dll_path) FATAL("Multiple -w options not supported");
-            winafl_dll_path = optarg;
-            break;
+        if (winafl_dll_path) FATAL("Multiple -w options not supported");
+        winafl_dll_path = optarg;
+        break;
 
-        case 'D': /* dynamorio dir */
+      case 'D': /* dynamorio dir */
 
-            if (dynamorio_dir) FATAL("Multiple -D options not supported");
-            dynamorio_dir = optarg;
-            break;
+        if (dynamorio_dir) FATAL("Multiple -D options not supported");
+        dynamorio_dir = optarg;
+        break;
 
-        case 'M': { /* master sync ID */
+      case 'M': { /* master sync ID */
 
-            u8* c;
+          u8* c;
 
-            if (sync_id) FATAL("Multiple -S or -M options not supported");
-            sync_id = optarg;
+          if (sync_id) FATAL("Multiple -S or -M options not supported");
+          sync_id = optarg;
 
-            if ((c = strchr(sync_id, ':'))) {
+          if ((c = strchr(sync_id, ':'))) {
 
-                *c = 0;
+            *c = 0;
 
-                if (sscanf(c + 1, "%u/%u", &master_id, &master_max) != 2 ||
-                    !master_id || !master_max || master_id > master_max ||
-                    master_max > 1000000) FATAL("Bogus master ID passed to -M");
+            if (sscanf(c + 1, "%u/%u", &master_id, &master_max) != 2 ||
+                !master_id || !master_max || master_id > master_max ||
+                master_max > 1000000) FATAL("Bogus master ID passed to -M");
 
-            }
+          }
 
-            force_deterministic = 1;
-            fuzzer_id = sync_id;
-
-        }
-                break;
-
-        case 'S':
-
-            if (sync_id) FATAL("Multiple -S or -M options not supported");
-            sync_id = ck_strdup(optarg);
-            break;
-
-        case 'f': /* target file */
-
-            if (out_file) FATAL("Multiple -f options not supported");
-            out_file = optarg;
-            break;
-
-        case 'x':
-
-            if (extras_dir) FATAL("Multiple -x options not supported");
-            extras_dir = optarg;
-            break;
-
-        case 't': {
-
-            u8 suffix = 0;
-
-            if (timeout_given) FATAL("Multiple -t options not supported");
-
-            if (sscanf(optarg, "%u%c", &exec_tmout, &suffix) < 1 ||
-                optarg[0] == '-') FATAL("Bad syntax used for -t");
-
-            if (exec_tmout < 5) FATAL("Dangerously low value of -t");
-
-            if (suffix == '+') timeout_given = 2; else timeout_given = 1;
-
-            break;
+          force_deterministic = 1;
+          fuzzer_id = sync_id;
 
         }
+        break;
 
-        case 'I': {
+      case 'S':
 
-            if (sscanf(optarg, "%u", &init_tmout) < 1) FATAL("Bad syntax used for -I");
+        if (sync_id) FATAL("Multiple -S or -M options not supported");
+        sync_id = ck_strdup(optarg);
+        break;
 
-            if (init_tmout < 5) FATAL("Dangerously low value of -I");
+      case 'f': /* target file */
 
+        if (out_file) FATAL("Multiple -f options not supported");
+        out_file = optarg;
+        break;
+
+      case 'x':
+
+        if (extras_dir) FATAL("Multiple -x options not supported");
+        extras_dir = optarg;
+        break;
+
+      case 't': {
+
+          u8 suffix = 0;
+
+          if (timeout_given) FATAL("Multiple -t options not supported");
+
+          if (sscanf(optarg, "%u%c", &exec_tmout, &suffix) < 1 ||
+              optarg[0] == '-') FATAL("Bad syntax used for -t");
+
+          if (exec_tmout < 5) FATAL("Dangerously low value of -t");
+
+          if (suffix == '+') timeout_given = 2; else timeout_given = 1;
+
+          break;
+
+      }
+
+      case 'I': {
+
+        if (sscanf(optarg, "%u", &init_tmout) < 1) FATAL("Bad syntax used for -I");
+
+        if (init_tmout < 5) FATAL("Dangerously low value of -I");
+
+        break;
+
+      }
+
+      case 'm': {
+
+          u8 suffix = 'M';
+
+          if (mem_limit_given) FATAL("Multiple -m options not supported");
+          mem_limit_given = 1;
+
+          if (!strcmp(optarg, "none")) {
+
+            mem_limit = 0;
             break;
 
-        }
+          }
 
-        case 'm': {
+          if (sscanf(optarg, "%llu%c", &mem_limit, &suffix) < 1 ||
+              optarg[0] == '-') FATAL("Bad syntax used for -m");
 
-            u8 suffix = 'M';
-
-            if (mem_limit_given) FATAL("Multiple -m options not supported");
-            mem_limit_given = 1;
-
-            if (!strcmp(optarg, "none")) {
-
-                mem_limit = 0;
-                break;
-
-            }
-
-            if (sscanf(optarg, "%llu%c", &mem_limit, &suffix) < 1 ||
-                optarg[0] == '-') FATAL("Bad syntax used for -m");
-
-            switch (suffix) {
+          switch (suffix) {
 
             case 'T': mem_limit *= 1024 * 1024; break;
             case 'G': mem_limit *= 1024; break;
@@ -8066,191 +8068,189 @@ int main(int argc, char** argv) {
 
             default:  FATAL("Unsupported suffix or bad syntax for -m");
 
-            }
+          }
 
-            if (mem_limit < 5) FATAL("Dangerously low value of -m");
+          if (mem_limit < 5) FATAL("Dangerously low value of -m");
 
-            break;
-        }
+          break;
+      }
 
-        case 'd':
+      case 'd':
 
-            if (skip_deterministic) FATAL("Multiple -d options not supported");
-            skip_deterministic = 1;
-            use_splicing = 1;
-            break;
+        if (skip_deterministic) FATAL("Multiple -d options not supported");
+        skip_deterministic = 1;
+        use_splicing = 1;
+        break;
 
-        case 'B':
+      case 'B':
 
-            /* This is a secret undocumented option! It is useful if you find
-               an interesting test case during a normal fuzzing process, and want
-               to mutate it without rediscovering any of the test cases already
-               found during an earlier run.
+        /* This is a secret undocumented option! It is useful if you find
+           an interesting test case during a normal fuzzing process, and want
+           to mutate it without rediscovering any of the test cases already
+           found during an earlier run.
 
-               To use this mode, you need to point -B to the fuzz_bitmap produced
-               by an earlier run for the exact same binary... and that's it.
+           To use this mode, you need to point -B to the fuzz_bitmap produced
+           by an earlier run for the exact same binary... and that's it.
 
-               I only used this once or twice to get variants of a particular
-               file, so I'm not making this an official setting. */
+           I only used this once or twice to get variants of a particular
+           file, so I'm not making this an official setting. */
 
-            if (in_bitmap) FATAL("Multiple -B options not supported");
+        if (in_bitmap) FATAL("Multiple -B options not supported");
 
-            in_bitmap = optarg;
-            read_bitmap(in_bitmap);
-            break;
+        in_bitmap = optarg;
+        read_bitmap(in_bitmap);
+        break;
 
-        case 'C':
+      case 'C':
 
-            if (crash_mode) FATAL("Multiple -C options not supported");
-            crash_mode = FAULT_CRASH;
-            break;
+        if (crash_mode) FATAL("Multiple -C options not supported");
+        crash_mode = FAULT_CRASH;
+        break;
 
-        case 'n':
+      case 'n':
 
-            if (dumb_mode) FATAL("Multiple -n options not supported");
-            if (getenv("AFL_DUMB_FORKSRV")) dumb_mode = 2; else dumb_mode = 1;
+        if (dumb_mode) FATAL("Multiple -n options not supported");
+        if (getenv("AFL_DUMB_FORKSRV")) dumb_mode = 2; else dumb_mode = 1;
 
-            break;
+        break;
 
-        case 'T':
+      case 'T':
 
-            if (use_banner) FATAL("Multiple -T options not supported");
-            use_banner = optarg;
-            break;
+        if (use_banner) FATAL("Multiple -T options not supported");
+        use_banner = optarg;
+        break;
 
-        case 'Q':
+      case 'Q':
 
-            if (qemu_mode) FATAL("Multiple -Q options not supported");
-            qemu_mode = 1;
+        if (qemu_mode) FATAL("Multiple -Q options not supported");
+        qemu_mode = 1;
 
-            if (!mem_limit_given) mem_limit = MEM_LIMIT_QEMU;
+        if (!mem_limit_given) mem_limit = MEM_LIMIT_QEMU;
 
-            break;
+        break;
 
-        case 'Y':
+      case 'Y':
 
-            if (dynamorio_dir) FATAL("Dynamic-instrumentation via DRIO is uncompatible with static-instrumentation");
-            drioless = 1;
+        if (dynamorio_dir) FATAL("Dynamic-instrumentation via DRIO is uncompatible with static-instrumentation");
+        drioless = 1;
 
-            break;
+        break;
 
-        case 'l':
-            custom_dll_defined = 1;
-            load_custom_library(optarg);
+      case 'l':
+        custom_dll_defined = 1;
+        load_custom_library(optarg);
 
-            break;
+        break;
 
-        case 'p':
-            persist_dr_cache = 1;
+	  case 'p':
+		  persist_dr_cache = 1;
 
-            break;
+		  break;
 
-        case 'P':
+	  case 'P':
 #ifdef INTELPT
-            use_intelpt = 1;
+		  use_intelpt = 1;
 #else
-            FATAL("afl-fuzz was not compiled with Intel PT support");
+		  FATAL("afl-fuzz was not compiled with Intel PT support");
 #endif
 
-            break;
+		  break;
 
-        case 'c':
+      case 'c':
 
-            if (getenv("AFL_NO_AFFINITY")) FATAL("-c and AFL_NO_AFFINITY are mutually exclusive.");
+        if (getenv("AFL_NO_AFFINITY")) FATAL("-c and AFL_NO_AFFINITY are mutually exclusive.");
 
-            if (cpu_aff) {
-                FATAL("Multiple -c options not supported");
-            }
-            else {
-                int cpunum = 0;
+        if (cpu_aff) {
+          FATAL("Multiple -c options not supported");
+        } else {
+          int cpunum = 0;
 
-                if (sscanf(optarg, "%d", &cpunum) < 1 ||
-                    cpunum < 0) FATAL("Bad syntax used for -c");
+          if (sscanf(optarg, "%d", &cpunum) < 1 ||
+              cpunum < 0) FATAL("Bad syntax used for -c");
 
-                if (cpunum >= 64)
-                    FATAL("Uh-oh, winafl doesn't support more than 64 cores at the moment\n");
+          if (cpunum >= 64)
+            FATAL("Uh-oh, winafl doesn't support more than 64 cores at the moment\n");
 
-                cpu_aff = 1ULL << cpunum;
-            }
-
-            break;
-
-        default:
-
-            usage(argv[0]);
-
+          cpu_aff = 1ULL << cpunum;
         }
 
-    if (!in_dir || !out_dir || !timeout_given || (!drioless && !dynamorio_dir && !use_intelpt)) usage(argv[0]);
+        break;
 
-    if (!winafl_dll_path) {
-        winafl_dll_path = "winafl.dll";
+      default:
+
+        usage(argv[0]);
+
     }
 
-    setup_signal_handlers();
-    check_asan_opts();
+  if (!in_dir || !out_dir || !timeout_given || (!drioless && !dynamorio_dir && !use_intelpt)) usage(argv[0]);
 
-    if (sync_id) fix_up_sync();
+  if (!winafl_dll_path) {
+    winafl_dll_path = "winafl.dll";
+  }
 
-    if (use_intelpt) {
+  setup_signal_handlers();
+  check_asan_opts();
+
+  if (sync_id) fix_up_sync();
+
+  if (use_intelpt) {
 #ifdef INTELPT
-        char* modules_dir = alloc_printf("%s\\ptmodules", out_dir);
-        int pt_options = pt_init(argc - optind, argv + optind, modules_dir);
-        ck_free(modules_dir);
-        if (!pt_options) usage(argv[0]);
-        optind += pt_options;
+	  char *modules_dir = alloc_printf("%s\\ptmodules", out_dir);
+	  int pt_options = pt_init(argc - optind, argv + optind, modules_dir);
+	  ck_free(modules_dir);
+	  if (!pt_options) usage(argv[0]);
+	  optind += pt_options;
 #endif
-    }
-    else {
-        extract_client_params(argc, argv);
-    }
-    optind++;
+  } else {
+	  extract_client_params(argc, argv);
+  }
+  optind++;
+  
+  if (!strcmp(in_dir, out_dir))
+    FATAL("Input and output directories can't be the same");
 
-    if (!strcmp(in_dir, out_dir))
-        FATAL("Input and output directories can't be the same");
+  if (dumb_mode) {
 
-    if (dumb_mode) {
+    if (crash_mode) FATAL("-C and -n are mutually exclusive");
+    if (qemu_mode)  FATAL("-Q and -n are mutually exclusive");
 
-        if (crash_mode) FATAL("-C and -n are mutually exclusive");
-        if (qemu_mode)  FATAL("-Q and -n are mutually exclusive");
+  }
 
-    }
+  if (getenv("AFL_NO_FORKSRV"))    no_forkserver    = 1;
+  if (getenv("AFL_NO_CPU_RED"))    no_cpu_meter_red = 1;
+  if (getenv("AFL_NO_ARITH"))      no_arith = 1;
+  if (getenv("AFL_SHUFFLE_QUEUE")) shuffle_queue    = 1;
+  if (getenv("AFL_NO_SINKHOLE"))   sinkhole_stds    = 0;
 
-    if (getenv("AFL_NO_FORKSRV"))    no_forkserver = 1;
-    if (getenv("AFL_NO_CPU_RED"))    no_cpu_meter_red = 1;
-    if (getenv("AFL_NO_ARITH"))      no_arith = 1;
-    if (getenv("AFL_SHUFFLE_QUEUE")) shuffle_queue = 1;
-    if (getenv("AFL_NO_SINKHOLE"))   sinkhole_stds = 0;
+  if (dumb_mode == 2 && no_forkserver)
+    FATAL("AFL_DUMB_FORKSRV and AFL_NO_FORKSRV are mutually exclusive");
 
-    if (dumb_mode == 2 && no_forkserver)
-        FATAL("AFL_DUMB_FORKSRV and AFL_NO_FORKSRV are mutually exclusive");
+  save_cmdline(argc, argv);
 
-    save_cmdline(argc, argv);
+  fix_up_banner(argv[optind]);
 
-    fix_up_banner(argv[optind]);
+  check_if_tty();
 
-    check_if_tty();
+  get_core_count();
 
-    get_core_count();
+  bind_to_free_cpu();
 
-    bind_to_free_cpu();
+  check_crash_handling();
+  check_cpu_governor();
 
-    check_crash_handling();
-    check_cpu_governor();
+  setup_post();
 
-    setup_post();
+  if (!in_bitmap) memset(virgin_bits, 255, MAP_SIZE);
+  memset(virgin_tmout, 255, MAP_SIZE);
+  memset(virgin_crash, 255, MAP_SIZE);
 
-    if (!in_bitmap) memset(virgin_bits, 255, MAP_SIZE);
-    memset(virgin_tmout, 255, MAP_SIZE);
-    memset(virgin_crash, 255, MAP_SIZE);
-
-    if (use_intelpt) {
-        trace_bits = VirtualAlloc(0, MAP_SIZE, MEM_COMMIT, PAGE_READWRITE);
-    }
-    else {
-        setup_shm();
-    }
-    if (use_sample_shared_memory){
+  if (use_intelpt) {
+	  trace_bits = VirtualAlloc(0, MAP_SIZE, MEM_COMMIT, PAGE_READWRITE);
+  } else {
+	  setup_shm();
+  }
+    if (use_sample_shared_memory)
+    {
         setup_sample_shm();
     }
   init_count_class16();
