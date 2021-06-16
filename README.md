@@ -213,9 +213,9 @@ Before using WinAFL for the first time, you should read the documentation for
 the specific instrumentation mode you are interested in. These also contain
 usage examples.
 
-## Sample delivery via sahred memory
+## Sample delivery via shared memory
 
-WinAFL supports delivering samples via sahred memory (as opposed to via a file, which is the default). This can be enabled by giving `-s` option to `afl-fuzz.exe`. Shared memory is faster and can avoid some problems with files (e.g. unable to ovewrwrite the sample file because a target maintains a lock on it). 
+WinAFL supports delivering samples via shared memory (as opposed to via a file, which is the default). This can be enabled by giving `-s` option to `afl-fuzz.exe`. Shared memory is faster and can avoid some problems with files (e.g. unable to ovewrwrite the sample file because a target maintains a lock on it). 
 If you are using shared memory for sample delivery then you need to make sure that in your harness you specifically read data from shared memory instead of file. Check a simple harness here:
 
 https://github.com/googleprojectzero/Jackalope/blob/6d92931b2cf614699e2a023254d5ee7e20f6e34b/test.cpp#L41  
