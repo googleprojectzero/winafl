@@ -107,7 +107,7 @@ int FUZZ_TARGET_MODIFIERS FuzzMe(wchar_t* filename)
 		if (image && (Ok == image->GetLastStatus())) {
 			//printf("Image loaded\n");
 			//thumbnail = image->GetThumbnailImage(100, 100, NULL, NULL);
-			if (thumbnail && (Ok == thumbnail->GetLastStatus())) {
+			//if (thumbnail && (Ok == thumbnail->GetLastStatus())) {
 				//printf("Thumbnail created\n");
 			}
 		}
