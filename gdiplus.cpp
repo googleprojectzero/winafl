@@ -104,13 +104,13 @@ int FUZZ_TARGET_MODIFIERS FuzzMe(wchar_t* filename)
 		IStream* stream = SHCreateMemStream(reinterpret_cast<BYTE*>(sample_bytes), sample_size);
 		image = Gdiplus::Image::FromStream(stream);
 	}
-		if (image && (Ok == image->GetLastStatus())) {
-			//printf("Image loaded\n");
-			//thumbnail = image->GetThumbnailImage(100, 100, NULL, NULL);
-			//if (thumbnail && (Ok == thumbnail->GetLastStatus())) {
-				//printf("Thumbnail created\n");
-			}
-		}
+		if(image && (Ok == image->GetLastStatus())) {
+		//printf("Image loaded\n");
+		/*thumbnail = image->GetThumbnailImage(100, 100, NULL, NULL);
+		if(thumbnail && (Ok == thumbnail->GetLastStatus())) {
+			//printf("Thumbnail created\n");
+		}*/
+	}
 	
 	//printf("Done\n");
 
