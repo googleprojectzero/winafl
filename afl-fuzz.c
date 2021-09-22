@@ -2396,6 +2396,7 @@ static void create_target_process(char** argv) {
     if(!AssignProcessToJobObject(hJob, child_handle)) {
       FATAL("AssignProcessToJobObject failed, GLE=%d.\n", GetLastError());
     }
+    CloseHandle(hJob);
   }
 
   ResumeThread(child_thread_handle);
