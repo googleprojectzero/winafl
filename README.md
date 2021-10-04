@@ -167,6 +167,7 @@ The following afl-fuzz options are supported:
   -M \\ -S id   - distributed mode
   -C            - crash exploration mode (the peruvian rabbit thing)
   -l path       - a path to user-defined DLL for custom test cases processing
+  -A module     - a module identifying a unique process to attach to
 ```
 
 Please refer to the original AFL documentation for more info on these flags.
@@ -212,6 +213,14 @@ modes with WinAFL:
 Before using WinAFL for the first time, you should read the documentation for
 the specific instrumentation mode you are interested in. These also contain
 usage examples.
+
+## Attaching to a running process
+
+The DynamoRIO instrumentation mode supports dynamically attaching to running processes. This option can be used to fuzz processes that cannot be directly launched by WinAFL, such as system services.
+
+To use it, specify the `-A <module>` option to `afl-fuzz.exe`, where `<module>` is the name of a module loaded only by the target process (if the module is loaded by more than one process WinAFL will terminate).
+
+WinAFL will attach to the target process, and fuzz it normally. When the target process terminates (regardless of the reason), WinAFL will not restart it, but simply try to reattach. It is assumed that the target process will be restarted by an external script (or by the system itself). If WinAFL will not find the new target process within 10 seconds, it will terminate.
 
 ## Sample delivery via shared memory
 

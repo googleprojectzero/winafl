@@ -87,7 +87,8 @@ static u32 hang_tmout = EXEC_TIMEOUT; /* Timeout used for hang det (ms)   */
 
 u64 mem_limit  = MEM_LIMIT;           /* Memory cap for child (MB)        */
 
-static u32 stats_update_freq = 1;     /* Stats update frequency (execs)   */
+static u32 stats_update_freq = 1,     /* Stats update frequency (execs)   */
+           drattachpid = 0;	          /* running process id for attach    */
 
 static u8  skip_deterministic,        /* Skip deterministic stages?       */
            force_deterministic,       /* Force deterministic stages?      */
@@ -112,7 +113,8 @@ static u8  skip_deterministic,        /* Skip deterministic stages?       */
            skip_requested,            /* Skip request, via SIGUSR1        */
            run_over10m,               /* Run time over 10 minutes?        */
            persistent_mode,           /* Running in persistent mode?      */
-           drioless = 0;              /* Running without DRIO?            */
+           drioless = 0,              /* Running without DRIO?            */
+           drattach = 0;	            /* attaching to a running process   */
            use_intelpt = 0;           /* Running without DRIO?            */
            custom_dll_defined = 0;    /* Custom DLL path defined ?        */
            persist_dr_cache = 0;      /* Custom DLL path defined ?        */
@@ -128,6 +130,7 @@ static s32 out_fd,                    /* Persistent fd for out_file       */
 
 HANDLE child_handle, child_thread_handle;
 char *dynamorio_dir;
+char *drattach_identifier;
 char *client_params;
 char *winafl_dll_path;
 int fuzz_iterations_max = 5000, fuzz_iterations_current;
@@ -1402,6 +1405,18 @@ static void cull_queue(void) {
 static void setup_sample_shm() {
 	 unsigned int seeds[2];
 	 u64 name_seed;
+
+  SECURITY_DESCRIPTOR sd;
+  SECURITY_ATTRIBUTES sa;
+
+  // give everyone access, to allow attached processes to communicate
+  InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION);
+  SetSecurityDescriptorDacl(&sd, TRUE, NULL, FALSE);
+
+  sa.nLength = sizeof(sa);
+  sa.lpSecurityDescriptor = &sd;
+  sa.bInheritHandle = FALSE;
+
 	 if (fuzzer_id == NULL) {
 	   // If it is null, it means we have to generate a random seed to name the instance
 		 rand_s(&seeds[0]);
@@ -1410,12 +1425,12 @@ static void setup_sample_shm() {
 		 fuzzer_id = (char*)alloc_printf("%I64x", name_seed);
 	 }
 	
-  sample_shm_str = (char*)alloc_printf("sample_afl_shm_%s", fuzzer_id);
+  sample_shm_str = (char*)alloc_printf("Global\\sample_afl_shm_%s", fuzzer_id);
 	//SAYF("sample_shm_str:\r\n", sample_shm_str);	
 
 	sample_shm_handle = CreateFileMapping(
 			INVALID_HANDLE_VALUE,    // use paging file
-			NULL,                    // default security
+			&sa,                     // allow access to everyone
 			PAGE_READWRITE,          // read/write access
 			0,                       // maximum object size (high-order DWORD)
 			MAX_SAMPLE_SIZE + sizeof(uint32_t),                // maximum object size (low-order DWORD)
@@ -1446,6 +1461,17 @@ static void setup_shm(void) {
   u64 name_seed;
   u8 attempts = 0;
 
+  SECURITY_DESCRIPTOR sd;
+  SECURITY_ATTRIBUTES sa;
+
+  // give everyone access, to allow attached processes to communicate
+  InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION);
+  SetSecurityDescriptorDacl(&sd, TRUE, NULL, FALSE);
+
+  sa.nLength = sizeof(sa);
+  sa.lpSecurityDescriptor = &sd;
+  sa.bInheritHandle = FALSE;
+
   while(attempts < 5) {
     if(fuzzer_id == NULL) {
       // If it is null, it means we have to generate a random seed to name the instance
@@ -1455,11 +1481,11 @@ static void setup_shm(void) {
       fuzzer_id = (char *)alloc_printf("%I64x", name_seed);
     }
 
-    shm_str = (char *)alloc_printf("afl_shm_%s", fuzzer_id);
+    shm_str = (char *)alloc_printf("Global\\afl_shm_%s", fuzzer_id);
 
     shm_handle = CreateFileMapping(
                    INVALID_HANDLE_VALUE,    // use paging file
-                   NULL,                    // default security
+                   &sa,                     // allow access to everyone
                    PAGE_READWRITE,          // read/write access
                    0,                       // maximum object size (high-order DWORD)
                    MAP_SIZE,                // maximum object size (low-order DWORD)
@@ -2292,6 +2318,75 @@ static BOOL OverlappedConnectNamedPipe(HANDLE pipe_h, LPOVERLAPPED overlapped)
 	}
 }
 
+static BOOL module_loaded_to_pid(u32 pid, char * module_name)
+{
+  BOOL found = FALSE;
+  MODULEENTRY32 module_entry;
+  HANDLE module_snap = INVALID_HANDLE_VALUE;
+  char current_module[MAX_PATH];
+  size_t chars_converted;
+
+  module_snap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, pid);
+  if (module_snap == INVALID_HANDLE_VALUE) {
+    return FALSE;
+  }
+
+  module_entry.dwSize = sizeof(MODULEENTRY32);
+
+  if (!Module32First(module_snap, &module_entry)) {
+    CloseHandle(module_snap);
+    return FALSE;
+  }
+
+  do {
+    if (strcmp(module_entry.szModule, module_name) == 0) {
+      found = TRUE;
+    }
+  } while(!found && Module32Next(module_snap, &module_entry));
+
+  CloseHandle(module_snap);
+  return found;
+}
+
+static u32 find_attach_pid(char * module_name)
+{
+  u32 attach_pid = 0;
+  u8 found = FALSE;
+  u32 attempt = 0;
+
+  PROCESSENTRY32 process_entry;
+  HANDLE process_snap = INVALID_HANDLE_VALUE;
+
+  do {
+    process_snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (process_snap == INVALID_HANDLE_VALUE) {
+      FATAL("Failed to create snapshot");
+    }
+
+    process_entry.dwSize = sizeof(PROCESSENTRY32);
+    if (!Process32First(process_snap, &process_entry)) {
+      CloseHandle(process_snap);
+      FATAL("Failed to enumerate processes");
+    }
+
+    do {
+      if (module_loaded_to_pid(process_entry.th32ProcessID, module_name)) {
+        if (found) {
+          FATAL("Attach module loaded to more than one process");
+        }
+        found = TRUE;
+        attach_pid = process_entry.th32ProcessID;
+      }
+    } while (Process32Next(process_snap, &process_entry));
+
+    CloseHandle(process_snap);
+
+    Sleep(1000);
+  } while (!found && (++attempt < MAX_ATTACH_ATTEMPTS));
+
+  return attach_pid;
+}
+
 static void create_target_process(char** argv) {
   char *cmd;
   char *pipe_name;
@@ -2306,18 +2401,29 @@ static void create_target_process(char** argv) {
   STARTUPINFO si;
   PROCESS_INFORMATION pi;
 
+  SECURITY_DESCRIPTOR sd;
+  SECURITY_ATTRIBUTES sa;
+
+  // give everyone access, to allow attached processes to communicate
+  InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION);
+  SetSecurityDescriptorDacl(&sd, TRUE, NULL, FALSE);
+
+  sa.nLength = sizeof(sa);
+  sa.lpSecurityDescriptor = &sd;
+  sa.bInheritHandle = FALSE;
+
   pipe_name = (char *)alloc_printf("\\\\.\\pipe\\afl_pipe_%s", fuzzer_id);
 
   pipe_handle = CreateNamedPipe(
     pipe_name,                // pipe name
-	PIPE_ACCESS_DUPLEX |     // read/write access 
-	FILE_FLAG_OVERLAPPED,    // overlapped mode 
+    PIPE_ACCESS_DUPLEX |      // read/write access 
+    FILE_FLAG_OVERLAPPED,     // overlapped mode 
     0,
     1,                        // max. instances
     512,                      // output buffer size
     512,                      // input buffer size
     20000,                    // client time-out
-    NULL);                    // default security attribute
+    &sa);                     // allow access to everyone
 
   if (pipe_handle == INVALID_HANDLE_VALUE) {
     FATAL("CreateNamedPipe failed, GLE=%d.\n", GetLastError());
@@ -2347,16 +2453,23 @@ static void create_target_process(char** argv) {
     cmd = alloc_printf("%s", target_cmd);
     ck_free(static_config);
   } else {
-    pidfile = alloc_printf("childpid_%s.txt", fuzzer_id);
-	if (persist_dr_cache) {
-		cmd = alloc_printf(
-			"%s\\drrun.exe -pidfile %s -no_follow_children -persist -persist_dir \"%s\\drcache\" -c %s %s -fuzzer_id %s -drpersist -- %s",
-			dynamorio_dir, pidfile, out_dir, winafl_dll_path, client_params, fuzzer_id, target_cmd);
-	} else {
-		cmd = alloc_printf(
-			"%s\\drrun.exe -pidfile %s -no_follow_children -c %s %s -fuzzer_id %s -- %s",
-			dynamorio_dir, pidfile, winafl_dll_path, client_params, fuzzer_id, target_cmd);
-	}
+    if (drattach) {
+      drattachpid = find_attach_pid(drattach_identifier);
+      cmd = alloc_printf(
+        "%s\\drrun.exe -attach %ld -no_follow_children -c winafl.dll %s -fuzzer_id %s",
+        dynamorio_dir, drattachpid, client_params, fuzzer_id);
+    } else {
+      pidfile = alloc_printf("childpid_%s.txt", fuzzer_id);
+      if (persist_dr_cache) {
+        cmd = alloc_printf(
+          "%s\\drrun.exe -pidfile %s -no_follow_children -persist -persist_dir \"%s\\drcache\" -c %s %s -fuzzer_id %s -drpersist -- %s",
+          dynamorio_dir, pidfile, out_dir, winafl_dll_path, client_params, fuzzer_id, target_cmd);
+      } else {
+        cmd = alloc_printf(
+          "%s\\drrun.exe -pidfile %s -no_follow_children -c %s %s -fuzzer_id %s -- %s",
+          dynamorio_dir, pidfile, winafl_dll_path, client_params, fuzzer_id, target_cmd);
+      }
+    }
   }
   if(mem_limit || cpu_aff) {
     hJob = CreateJobObject(NULL, NULL);
@@ -2410,7 +2523,20 @@ static void create_target_process(char** argv) {
 
   watchdog_enabled = 0;
 
-  if(drioless == 0) {
+  if (drattach) {
+    child_pid = drattachpid;
+
+    CloseHandle(child_handle);
+    child_handle = OpenProcess(PROCESS_ALL_ACCESS, FALSE, child_pid);
+    if (child_handle == NULL)
+    {
+      FATAL("OpenProcess failed, GLE=%d.\n", GetLastError());
+    }
+
+    CloseHandle(child_thread_handle);
+    child_thread_handle = NULL;
+  }
+  else if (drioless == 0) {
     //by the time pipe has connected the pidfile must have been created
     fp = fopen(pidfile, "rb");
     if(!fp) {
@@ -2445,6 +2571,11 @@ static void destroy_target_process(int wait_exit) {
 	PROCESS_INFORMATION pi;
 
 	EnterCriticalSection(&critical_section);
+
+  if (drattach) {
+    // reset the attach pid for next round
+    drattachpid = 0;
+  }
 
 	if (!child_handle) {
 		goto leave;
@@ -2500,11 +2631,14 @@ static void destroy_target_process(int wait_exit) {
 	}
 
 done:
-	CloseHandle(child_handle);
-	CloseHandle(child_thread_handle);
-
-	child_handle = NULL;
-	child_thread_handle = NULL;
+  if (child_handle) {
+    CloseHandle(child_handle);
+    child_handle = NULL;
+  }
+  if (child_thread_handle) {
+    CloseHandle(child_thread_handle);
+    child_thread_handle = NULL;
+  }
 
 leave:
 	//close the pipe
@@ -7252,6 +7386,8 @@ static void usage(u8* argv0) {
        "  -M \\ -S id   - distributed mode (see parallel_fuzzing.txt)\n"
        "  -C            - crash exploration mode (the peruvian rabbit thing)\n"
        "  -l path       - a path to user-defined DLL for custom test cases processing\n\n"
+       "Attach:\n"
+       "  -A module     - attach to the process that loaded the provided module\n\n"
 
        "For additional tips, please consult %s\\README.\n\n",
 
@@ -7941,7 +8077,7 @@ int main(int argc, char** argv) {
   client_params = NULL;
   winafl_dll_path = NULL;
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:I:T:sdYnCB:S:M:x:QD:b:l:pPc:w:")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:t:I:T:sdYnCB:S:M:x:QD:b:l:pPc:w:A:")) > 0)
 
     switch (opt) {
       case 's':
@@ -8178,6 +8314,12 @@ int main(int argc, char** argv) {
           cpu_aff = 1ULL << cpunum;
         }
 
+        break;
+
+      case 'A':
+        // attaching to a running process with the specified module
+        drattach = 1;
+        drattach_identifier = optarg;
         break;
 
       default:

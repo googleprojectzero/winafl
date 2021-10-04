@@ -352,4 +352,6 @@
 
 // #define IGNORE_FINDS
 
+#define MAX_ATTACH_ATTEMPTS 10
+
 #endif /* ! _HAVE_CONFIG_H */

@@ -886,7 +886,7 @@ options_init(client_id_t id, int argc, const char *argv[])
         else if (strcmp(token, "-fuzzer_id") == 0) {
             USAGE_CHECK((i + 1) < argc, "missing fuzzer id");
             strcpy(options.pipe_name, "\\\\.\\pipe\\afl_pipe_");
-            strcpy(options.shm_name, "afl_shm_");
+            strcpy(options.shm_name, "Global\\afl_shm_");
             strcat(options.pipe_name, argv[i+1]);
             strcat(options.shm_name, argv[i+1]);
             i++;
