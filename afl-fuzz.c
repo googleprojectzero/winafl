@@ -7387,7 +7387,7 @@ static void usage(u8* argv0) {
        "  -C            - crash exploration mode (the peruvian rabbit thing)\n"
        "  -l path       - a path to user-defined DLL for custom test cases processing\n\n"
        "Attach:\n"
-       "  -A path       - attach to the process that loaded the provided module\n\n"
+       "  -A module     - attach to the process that loaded the provided module\n\n"
 
        "For additional tips, please consult %s\\README.\n\n",
 
