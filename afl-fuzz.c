@@ -2371,10 +2371,13 @@ static u32 find_attach_pid(char * module_name)
 
     do {
       if (module_loaded_to_pid(process_entry.th32ProcessID, module_name)) {
+        if (found) {
+          FATAL("Attach module loaded to more than one process");
+        }
         found = TRUE;
         attach_pid = process_entry.th32ProcessID;
       }
-    } while (!found && Process32Next(process_snap, &process_entry));
+    } while (Process32Next(process_snap, &process_entry));
 
     CloseHandle(process_snap);
 
