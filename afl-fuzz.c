@@ -2524,15 +2524,17 @@ static void create_target_process(char** argv) {
   watchdog_enabled = 0;
 
   if (drattach) {
-    CloseHandle(child_handle);
-    CloseHandle(child_thread_handle);
-
     child_pid = drattachpid;
+
+    CloseHandle(child_handle);
     child_handle = OpenProcess(PROCESS_ALL_ACCESS, FALSE, child_pid);
-    if (child_handle == INVALID_HANDLE_VALUE)
+    if (child_handle == NULL)
     {
       FATAL("OpenProcess failed, GLE=%d.\n", GetLastError());
     }
+
+    CloseHandle(child_thread_handle);
+    child_thread_handle = NULL;
   }
   else if (drioless == 0) {
     //by the time pipe has connected the pidfile must have been created
@@ -2629,11 +2631,14 @@ static void destroy_target_process(int wait_exit) {
 	}
 
 done:
-	CloseHandle(child_handle);
-	CloseHandle(child_thread_handle);
-
-	child_handle = NULL;
-	child_thread_handle = NULL;
+  if (child_handle) {
+    CloseHandle(child_handle);
+    child_handle = NULL;
+  }
+  if (child_thread_handle) {
+    CloseHandle(child_thread_handle);
+    child_thread_handle = NULL;
+  }
 
 leave:
 	//close the pipe
