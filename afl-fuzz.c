@@ -1425,7 +1425,7 @@ static void setup_sample_shm() {
 		 fuzzer_id = (char*)alloc_printf("%I64x", name_seed);
 	 }
 	
-  sample_shm_str = (char*)alloc_printf("Global\\sample_afl_shm_%s", fuzzer_id);
+  sample_shm_str = (char*)alloc_printf("sample_afl_shm_%s", fuzzer_id);
 	//SAYF("sample_shm_str:\r\n", sample_shm_str);	
 
 	sample_shm_handle = CreateFileMapping(
@@ -1481,7 +1481,7 @@ static void setup_shm(void) {
       fuzzer_id = (char *)alloc_printf("%I64x", name_seed);
     }
 
-    shm_str = (char *)alloc_printf("Global\\afl_shm_%s", fuzzer_id);
+    shm_str = (char *)alloc_printf("afl_shm_%s", fuzzer_id);
 
     shm_handle = CreateFileMapping(
                    INVALID_HANDLE_VALUE,    // use paging file
