@@ -99,6 +99,10 @@ typedef struct _winafl_option_t {
     bool thread_coverage;
     bool no_loop;
 	bool dr_persist_cache;
+    unsigned long data_param_index;
+    unsigned long size_param_index;
+    unsigned long marker_offset;
+    bool is_marked;
 } winafl_option_t;
 static winafl_option_t options;
 
@@ -456,10 +460,36 @@ instrument_edge_coverage(void *drcontext, void *tag, instrlist_t *bb, instr_t *i
     return ret;
 }
 
+static bool
+remove_marker(unsigned char *data, size_t size)
+{
+    unsigned long marker_index = options.marker_offset / 8;
+    unsigned char marker_mask = 1 << (options.marker_offset % 8);
+
+    if (size <= marker_index) {
+        return false;
+    }
+
+    if (data[marker_index] & marker_mask) {
+        data[marker_index] -= marker_mask;
+        return true;
+    }
+
+    return false;
+}
+
 static void
 pre_loop_start_handler(void *wrapcxt, INOUT void **user_data)
 {
 	void *drcontext = drwrap_get_drcontext(wrapcxt);
+
+	if (options.is_marked) {
+		UCHAR *data = (UCHAR *)drwrap_get_arg(wrapcxt, options.data_param_index);
+		size_t size = (size_t)drwrap_get_arg(wrapcxt, options.size_param_index);
+		if (!remove_marker(data, size)) {
+			return;
+        }
+    }
 
 	if (!options.debug_mode) {
 		//let server know we finished a cycle, redundunt on first cycle.
@@ -864,6 +894,10 @@ options_init(client_id_t id, int argc, const char *argv[])
     options.num_fuz_args = 0;
     options.callconv = DRWRAP_CALLCONV_DEFAULT;
 	options.dr_persist_cache = false;
+    options.data_param_index = 0;
+    options.size_param_index = 0;
+    options.marker_offset = 0;
+    options.is_marked = false;
     dr_snprintf(options.logdir, BUFFER_SIZE_ELEMENTS(options.logdir), ".");
 
     strcpy(options.pipe_name, "\\\\.\\pipe\\afl_pipe_default");
@@ -963,6 +997,22 @@ options_init(client_id_t id, int argc, const char *argv[])
 			{
 				options.persistence_mode = native_mode;
 			}
+		}
+		else if (strcmp(token, "-data_param_index") == 0) {
+			USAGE_CHECK((i + 1) < argc, "missing data parameter index");
+			const char* mode = argv[++i];
+			options.data_param_index = strtoul(argv[++i], NULL, 0);
+		}
+		else if (strcmp(token, "-size_param_index") == 0) {
+			USAGE_CHECK((i + 1) < argc, "missing size parameter index");
+			const char* mode = argv[++i];
+			options.size_param_index = strtoul(argv[++i], NULL, 0);
+		}
+		else if (strcmp(token, "-marker_offset") == 0) {
+			USAGE_CHECK((i + 1) < argc, "missing marker offset");
+			const char* mode = argv[++i];
+			options.marker_offset = strtoul(argv[++i], NULL, 0);
+			options.is_marked = true;
 		}
         else {
             NOTIFY(0, "UNRECOGNIZED OPTION: \"%s\"\n", token);
