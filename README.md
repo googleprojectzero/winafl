@@ -152,7 +152,6 @@ The following afl-fuzz options are supported:
   -t msec       - timeout for each run
   -s            - deliver sample via shared memory
   -D dir        - directory containing DynamoRIO binaries (drrun, drconfig)
-  -w path       - path to winafl.dll
   -P            - use Intel PT tracing mode
   -Y            - enable the static instrumentation mode
   -f file       - location read by the fuzzed program

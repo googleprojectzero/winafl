@@ -132,7 +132,6 @@ HANDLE child_handle, child_thread_handle;
 char *dynamorio_dir;
 char *drattach_identifier;
 char *client_params;
-char *winafl_dll_path;
 int fuzz_iterations_max = 5000, fuzz_iterations_current;
 DWORD ret_exception_code = 0;
 
@@ -2456,18 +2455,18 @@ static void create_target_process(char** argv) {
     if (drattach) {
       drattachpid = find_attach_pid(drattach_identifier);
       cmd = alloc_printf(
-        "%s\\drrun.exe -attach %ld -no_follow_children -c winafl.dll %s -fuzzer_id %s",
+        "%s\\drrun.exe -attach %ld -t winafl %s -fuzzer_id %s",
         dynamorio_dir, drattachpid, client_params, fuzzer_id);
     } else {
       pidfile = alloc_printf("childpid_%s.txt", fuzzer_id);
       if (persist_dr_cache) {
         cmd = alloc_printf(
-          "%s\\drrun.exe -pidfile %s -no_follow_children -persist -persist_dir \"%s\\drcache\" -c %s %s -fuzzer_id %s -drpersist -- %s",
-          dynamorio_dir, pidfile, out_dir, winafl_dll_path, client_params, fuzzer_id, target_cmd);
+          "%s\\drrun.exe -pidfile %s -persist -persist_dir \"%s\\drcache\" -t winafl %s -fuzzer_id %s -drpersist -- %s",
+          dynamorio_dir, pidfile, out_dir, client_params, fuzzer_id, target_cmd);
       } else {
         cmd = alloc_printf(
-          "%s\\drrun.exe -pidfile %s -no_follow_children -c %s %s -fuzzer_id %s -- %s",
-          dynamorio_dir, pidfile, winafl_dll_path, client_params, fuzzer_id, target_cmd);
+          "%s\\drrun.exe -pidfile %s -t winafl %s -fuzzer_id %s -- %s",
+          dynamorio_dir, pidfile, client_params, fuzzer_id, target_cmd);
       }
     }
   }
@@ -8075,9 +8074,8 @@ int main(int argc, char** argv) {
   out_dir = NULL;
   dynamorio_dir = NULL;
   client_params = NULL;
-  winafl_dll_path = NULL;
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:I:T:sdYnCB:S:M:x:QD:b:l:pPc:w:A:")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:t:I:T:sdYnCB:S:M:x:QD:b:l:pPc:A:")) > 0)
 
     switch (opt) {
       case 's':
@@ -8100,12 +8098,6 @@ int main(int argc, char** argv) {
 
         if (out_dir) FATAL("Multiple -o options not supported");
         out_dir = optarg;
-        break;
-
-      case 'w': /* winafl.dll path */
-
-        if (winafl_dll_path) FATAL("Multiple -w options not supported");
-        winafl_dll_path = optarg;
         break;
 
       case 'D': /* dynamorio dir */
@@ -8329,10 +8321,6 @@ int main(int argc, char** argv) {
     }
 
   if (!in_dir || !out_dir || !timeout_given || (!drioless && !dynamorio_dir && !use_intelpt)) usage(argv[0]);
-
-  if (!winafl_dll_path) {
-    winafl_dll_path = "winafl.dll";
-  }
 
   setup_signal_handlers();
   check_asan_opts();
