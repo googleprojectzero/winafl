@@ -55,6 +55,9 @@ class AFLShowMapWorker(object):
         if os.getenv('AFL_NO_SINKHOLE') is None:
             r.append('-q')
 
+        if args.edges_only:
+            r.append('-e')
+
         if args.time_limit > 0:
             r.extend(['-t', '%d' % args.time_limit])
         else:
@@ -79,9 +82,6 @@ class AFLShowMapWorker(object):
 
             for mod in args.coverage_modules:
                 r.extend(['-coverage_module', mod])
-
-        if args.edges_only:
-            r.append('-e')
 
         r.append('--')
         r.extend(args.target_cmdline)
