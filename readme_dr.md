@@ -105,35 +105,9 @@ iteration. Note the list of loaded modules for setting the -coverage_module
 flag. Note that you must use the same values for module names as seen in the
 log file (not case sensitive).
 
-4. The DynamoRIO client implemented in the `winafl.dll` can be packaged up with
-DynamoRIO to create an end-user tool, hence using `drrun` for WinAFL is made
-simpler by the `-t` option. First, create a file in the `tools` subdirectory of
-the root of DynamoRIO called `winafl.drrun32` or `winafl.drrun64`, depending on
-the target architecture. The `CLIENT_REL` or `CLIENT_ABS` options enable `drrun`
-to locate the WinAFL client library. This file can also modify the default
-DynamoRIO runtime options (see DynamoRIO Runtime Options) via `DR_OP=` lines.
-As an example for a 32-bit build, this file should contain at least the
-following lines:
-
-```
-CLIENT_REL=tools/lib32/release/winafl.dll
-DR_OP=-no_follow_children
-```
-
-The `-msgbox_mask` option controls whether DynamoRIO uses pop-up message boxes
-when presenting information. As an example, append the following lines to this
-file to disable out of memory notices in case the target process reaches
-the memory limit specified with the `-m` option:
-
-```
-DR_OP=-msgbox_mask
-DR_OP=0x0
-```
-
-5. Now you should be ready to fuzz the target. First, make sure that both
-afl-fuzz.exe and winafl.dll are in the current directory and that winafl.dll
-is also available at the path specified by the `CLIENT_REL` or `CLIENT_ABS`
-option. As stated earlier, the command line for afl-fuzz on Windows is:
+4. Now you should be ready to fuzz the target. First, make sure that both
+afl-fuzz.exe and winafl.dll are in the current directory. As stated earlier,
+the command line for afl-fuzz on Windows is:
 
 ```
 afl-fuzz [afl options] -- [instrumentation options] -- target_cmd_line
@@ -210,3 +184,31 @@ afl-fuzz.exe -i in -o out -D <dynamorio bin path> -t 100+ -- -coverage_module te
 ```
 
 
+## Expert mode
+
+The DynamoRIO client implemented in the `winafl.dll` can be packaged up with
+DynamoRIO to create an end-user tool, hence using `drrun` for WinAFL is made
+simpler by the `-t` option. This is possible by running `afl-fuzz.exe` in
+expert mode enabled by the `-e` switch.
+
+First, create a file in the `tools` subdirectory of the root of DynamoRIO called
+`winafl.drrun32` or `winafl.drrun64`, depending on the target architecture. The
+`CLIENT_REL` or `CLIENT_ABS` options enable `drrun` to locate the WinAFL client
+library. This file can also modify the default DynamoRIO runtime options (see
+DynamoRIO Runtime Options) via `DR_OP=` lines. As an example for a 32-bit build,
+this file should contain at least the following lines:
+
+```
+CLIENT_REL=tools/lib32/release/winafl.dll
+DR_OP=-no_follow_children
+```
+
+The `-msgbox_mask` option controls whether DynamoRIO uses pop-up message boxes
+when presenting information. As an example, append the following lines to this
+file to disable out of memory notices in case the target process reaches the
+memory limit specified with the `-m` option:
+
+```
+DR_OP=-msgbox_mask
+DR_OP=0x0
+```

@@ -118,6 +118,7 @@ static u8  skip_deterministic,        /* Skip deterministic stages?       */
            use_intelpt = 0;           /* Running without DRIO?            */
            custom_dll_defined = 0;    /* Custom DLL path defined ?        */
            persist_dr_cache = 0;      /* Custom DLL path defined ?        */
+           expert_mode = 0;           /* Running in expert mode with DRIO?*/
 
 static s32 out_fd,                    /* Persistent fd for out_file       */
            dev_urandom_fd = -1,       /* Persistent fd for /dev/urandom   */
@@ -132,6 +133,7 @@ HANDLE child_handle, child_thread_handle;
 char *dynamorio_dir;
 char *drattach_identifier;
 char *client_params;
+char *winafl_dll_path;
 int fuzz_iterations_max = 5000, fuzz_iterations_current;
 DWORD ret_exception_code = 0;
 
@@ -2451,7 +2453,7 @@ static void create_target_process(char** argv) {
     SetEnvironmentVariable("AFL_STATIC_CONFIG", static_config);
     cmd = alloc_printf("%s", target_cmd);
     ck_free(static_config);
-  } else {
+  } else if (expert_mode) {
     if (drattach) {
       drattachpid = find_attach_pid(drattach_identifier);
       cmd = alloc_printf(
@@ -2467,6 +2469,25 @@ static void create_target_process(char** argv) {
         cmd = alloc_printf(
           "%s\\drrun.exe -pidfile %s -t winafl %s -fuzzer_id %s -- %s",
           dynamorio_dir, pidfile, client_params, fuzzer_id, target_cmd);
+      }
+    }
+  }
+  else {
+    if (drattach) {
+      drattachpid = find_attach_pid(drattach_identifier);
+      cmd = alloc_printf(
+        "%s\\drrun.exe -attach %ld -no_follow_children -c winafl.dll %s -fuzzer_id %s",
+        dynamorio_dir, drattachpid, client_params, fuzzer_id);
+    } else {
+      pidfile = alloc_printf("childpid_%s.txt", fuzzer_id);
+      if (persist_dr_cache) {
+        cmd = alloc_printf(
+          "%s\\drrun.exe -pidfile %s -no_follow_children -persist -persist_dir \"%s\\drcache\" -c %s %s -fuzzer_id %s -drpersist -- %s",
+          dynamorio_dir, pidfile, out_dir, winafl_dll_path, client_params, fuzzer_id, target_cmd);
+      } else {
+        cmd = alloc_printf(
+          "%s\\drrun.exe -pidfile %s -no_follow_children -c %s %s -fuzzer_id %s -- %s",
+          dynamorio_dir, pidfile, winafl_dll_path, client_params, fuzzer_id, target_cmd);
       }
     }
   }
@@ -8074,8 +8095,9 @@ int main(int argc, char** argv) {
   out_dir = NULL;
   dynamorio_dir = NULL;
   client_params = NULL;
+  winafl_dll_path = NULL;
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:I:T:sdYnCB:S:M:x:QD:b:l:pPc:A:")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:t:I:T:sdYnCB:S:M:x:QD:b:l:pPc:w:A:e")) > 0)
 
     switch (opt) {
       case 's':
@@ -8098,6 +8120,12 @@ int main(int argc, char** argv) {
 
         if (out_dir) FATAL("Multiple -o options not supported");
         out_dir = optarg;
+        break;
+
+      case 'w': /* winafl.dll path */
+
+        if (winafl_dll_path) FATAL("Multiple -w options not supported");
+        winafl_dll_path = optarg;
         break;
 
       case 'D': /* dynamorio dir */
@@ -8314,6 +8342,13 @@ int main(int argc, char** argv) {
         drattach_identifier = optarg;
         break;
 
+      case 'e':
+        // use WinAFL as a tool to run alongside DynamoRIO
+        if (use_intelpt || drioless) FATAL("Expert mode is only available for DynamoRIO");
+        if (expert_mode) FATAL("Multiple -e options not supported");
+        expert_mode = 1;
+        break;
+
       default:
 
         usage(argv[0]);
@@ -8321,6 +8356,10 @@ int main(int argc, char** argv) {
     }
 
   if (!in_dir || !out_dir || !timeout_given || (!drioless && !dynamorio_dir && !use_intelpt)) usage(argv[0]);
+
+  if (!winafl_dll_path) {
+    winafl_dll_path = "winafl.dll";
+  }
 
   setup_signal_handlers();
   check_asan_opts();
