@@ -7393,6 +7393,7 @@ static void usage(u8* argv0) {
        "  -T text       - text banner to show on the screen\n"
        "  -M \\ -S id   - distributed mode (see parallel_fuzzing.txt)\n"
        "  -C            - crash exploration mode (the peruvian rabbit thing)\n"
+       "  -e            - expert mode to run WinAFL as a DynamoRIO tool\n"
        "  -l path       - a path to user-defined DLL for custom test cases processing\n\n"
        "Attach:\n"
        "  -A module     - attach to the process that loaded the provided module\n\n"
