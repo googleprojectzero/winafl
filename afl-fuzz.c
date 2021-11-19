@@ -8347,6 +8347,8 @@ int main(int argc, char** argv) {
 
   if (!winafl_dll_path) {
     winafl_dll_path = "winafl.dll";
+  } else if (expert_mode) {
+    FATAL("-w and -e are mutually exclusive");
   }
 
   setup_signal_handlers();
