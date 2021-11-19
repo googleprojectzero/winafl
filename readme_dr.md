@@ -196,11 +196,10 @@ First, create a file in the `tools` subdirectory of the root of DynamoRIO called
 `CLIENT_REL` or `CLIENT_ABS` options enable `drrun` to locate the WinAFL client
 library. This file can also modify the default DynamoRIO runtime options (see
 DynamoRIO Runtime Options) via `DR_OP=` lines. As an example for a 32-bit build,
-this file should contain at least the following lines:
+this file should contain at least the following line:
 
 ```
 CLIENT_REL=tools/lib32/release/winafl.dll
-DR_OP=-no_follow_children
 ```
 
 The `-msgbox_mask` option controls whether DynamoRIO uses pop-up message boxes
@@ -211,4 +210,39 @@ memory limit specified with the `-m` option:
 ```
 DR_OP=-msgbox_mask
 DR_OP=0x0
+```
+
+Tool options can also be specified via `TOOL_OP=` lines. As an example, append
+the following lines to this file for a complete configuration to start fuzzing
+using the supplied `test_gdiplus.exe`:
+
+```
+TOOL_OP=-covtype
+TOOL_OP=edge
+TOOL_OP=-coverage_module
+TOOL_OP=gdiplus.dll
+TOOL_OP=-fuzz_iterations
+TOOL_OP=1000
+TOOL_OP=-target_module
+TOOL_OP=test_gdiplus.exe
+TOOL_OP=-target_method
+TOOL_OP=main
+TOOL_OP=-nargs
+TOOL_OP=2
+```
+
+Now you can omit the client parameters from the command line as all the required
+options are set in the tool configuration file.
+
+Make sure that the target is running correctly using WinAFL as a DynamoRIO tool:
+
+```
+drrun.exe -t winafl -debug -- test_gdiplus.exe input.bmp
+```
+
+If everything appears to be working correctly, launch `afl-fuzz.exe` in expert
+mode using the `-e` switch:
+
+```
+afl-fuzz.exe -e -i in -o out -D <dynamorio bin path> -t 100+ -- -- test_gdiplus.exe @@
 ```
