@@ -2444,9 +2444,10 @@ static void create_target_process(char** argv) {
     inherit_handles = FALSE;
   }
 
-  client_invocation = alloc_printf("-c %s", winafl_dll_path);
   if (expert_mode) {
     client_invocation = alloc_printf("-t winafl");
+  } else {
+    client_invocation = alloc_printf("-c %s", winafl_dll_path);
   }
 
   if(drioless) {
@@ -2566,6 +2567,7 @@ static void create_target_process(char** argv) {
     child_pid = pi.dwProcessId;
   }
 
+  ck_free(client_invocation);
   ck_free(target_cmd);
   ck_free(cmd);
   ck_free(pipe_name);
