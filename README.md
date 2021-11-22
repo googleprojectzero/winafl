@@ -158,6 +158,7 @@ The following afl-fuzz options are supported:
   -s            - deliver sample via shared memory
   -D dir        - directory containing DynamoRIO binaries (drrun, drconfig)
   -w path       - path to winafl.dll
+  -e            - expert mode to run WinAFL as a DynamoRIO tool
   -P            - use Intel PT tracing mode
   -Y            - enable the static instrumentation mode
   -f file       - location read by the fuzzed program
