@@ -336,7 +336,7 @@ static void write_to_file(u8* path, u8* mem, u32 len) {
 
   _unlink(path); /* Ignore errors */
 
-  ret = _open(path, O_RDWR | O_CREAT | O_EXCL | O_BINARY, 0600);
+  ret = _open(path, O_RDWR | O_CREAT | O_EXCL | O_BINARY, DEFAULT_PERMISSION);
 
   if (ret < 0) PFATAL("Unable to create '%s'", path);
 

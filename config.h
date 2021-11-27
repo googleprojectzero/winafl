@@ -35,6 +35,9 @@
  *                                                    *
  ******************************************************/
 
+/* Default file permission umode when creating files (default: 0600) */
+#define DEFAULT_PERMISSION  0600
+
 /* Comment out to disable terminal colors: */
 
 // #define USE_COLOR

@@ -284,7 +284,7 @@ static u32 write_results(void) {
 
   if (!strncmp(out_file, "/dev/", 5)) {
 
-    fd = _open(out_file, O_WRONLY, 0600);
+    fd = _open(out_file, O_WRONLY, DEFAULT_PERMISSION);
     if (fd < 0) PFATAL("Unable to open '%s'", out_file);
 
   } else if (!strcmp(out_file, "-")) {
@@ -295,7 +295,7 @@ static u32 write_results(void) {
   } else {
 
     _unlink(out_file); /* Ignore errors */
-    fd = _open(out_file, O_WRONLY | O_CREAT | O_EXCL, 0600);
+    fd = _open(out_file, O_WRONLY | O_CREAT | O_EXCL, DEFAULT_PERMISSION);
     if (fd < 0) PFATAL("Unable to create '%s'", out_file);
 
   }

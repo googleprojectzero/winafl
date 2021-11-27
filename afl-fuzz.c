@@ -767,7 +767,7 @@ static void mark_as_det_done(struct queue_entry* q) {
 
   fn = alloc_printf("%s\\queue\\.state\\deterministic_done\\%s", out_dir, fn + 1);
 
-  fd = _open(fn, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, 0600);
+  fd = _open(fn, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, DEFAULT_PERMISSION);
   if (fd < 0) PFATAL("Unable to create '%s'", fn);
   _close(fd);
 
@@ -813,7 +813,7 @@ static void mark_as_redundant(struct queue_entry* q, u8 state) {
 
   if (state) {
 
-    fd = _open(fn, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, 0600);
+    fd = _open(fn, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, DEFAULT_PERMISSION);
     if (fd < 0) PFATAL("Unable to create '%s'", fn);
     _close(fd);
 
@@ -898,7 +898,7 @@ static void write_bitmap(void) {
   bitmap_changed = 0;
 
   fname = alloc_printf("%s\\fuzz_bitmap", out_dir);
-  fd = _open(fname, O_WRONLY | O_BINARY | O_CREAT | O_TRUNC, 0600);
+  fd = _open(fname, O_WRONLY | O_BINARY | O_CREAT | O_TRUNC, DEFAULT_PERMISSION);
 
   if (fd < 0) PFATAL("Unable to open '%s'", fname);
 
@@ -2115,7 +2115,7 @@ static void save_auto(void) {
     u8* fn = alloc_printf("%s\\queue\\.state\\auto_extras\\auto_%06u", out_dir, i);
     s32 fd;
 
-    fd = _open(fn, O_WRONLY | O_BINARY | O_CREAT | O_TRUNC, 0600);
+    fd = _open(fn, O_WRONLY | O_BINARY | O_CREAT | O_TRUNC, DEFAULT_PERMISSION);
 
     if (fd < 0) PFATAL("Unable to create '%s'", fn);
 
@@ -2141,7 +2141,7 @@ static void load_auto(void) {
     u8* fn = alloc_printf("%s\\.state\\auto_extras\\auto_%06u", in_dir, i);
     s32 fd, len;
 
-    fd = _open(fn, O_RDONLY | O_BINARY, 0600);
+    fd = _open(fn, O_RDONLY | O_BINARY, DEFAULT_PERMISSION);
 
     if (fd < 0) {
 
@@ -2953,14 +2953,14 @@ static void write_to_testcase(void* mem, u32 len) {
 
     unlink(out_file); /* Ignore errors. */
 
-    fd = open(out_file, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, 0600);
+    fd = open(out_file, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, DEFAULT_PERMISSION);
 
     if (fd < 0) {
       destroy_target_process(0);
       
 	  unlink(out_file); /* Ignore errors. */
 
-	  fd = open(out_file, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, 0600);
+	  fd = open(out_file, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, DEFAULT_PERMISSION);
 		
       if (fd < 0) PFATAL("Unable to create '%s'", out_file);
 
@@ -3353,7 +3353,7 @@ static void link_or_copy(u8* old_path, u8* new_path) {
   sfd = open(old_path, O_RDONLY | O_BINARY);
   if (sfd < 0) PFATAL("Unable to open '%s'", old_path);
 
-  dfd = open(new_path, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, 0600);
+  dfd = open(new_path, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, DEFAULT_PERMISSION);
   if (dfd < 0) PFATAL("Unable to create '%s'", new_path);
 
   tmp = ck_alloc(64 * 1024);
@@ -3515,7 +3515,7 @@ static void write_crash_readme(void) {
   s32 fd;
   FILE* f;
 
-  fd = open(fn, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, 0600);
+  fd = open(fn, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, DEFAULT_PERMISSION);
   ck_free(fn);
 
   /* Do not die on errors here - that would be impolite. */
@@ -3603,7 +3603,7 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
     if (res == FAULT_ERROR)
       FATAL("Unable to execute target application");
 
-    fd = open(fn, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, 0600);
+    fd = open(fn, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, DEFAULT_PERMISSION);
     if (fd < 0) PFATAL("Unable to create '%s'", fn);
     ck_write(fd, mem, len, fn);
     close(fd);
@@ -3761,7 +3761,7 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
   /* If we're here, we apparently want to save the crash or hang
      test case, too. */
 
-  fd = open(fn, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, 0600);
+  fd = open(fn, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, DEFAULT_PERMISSION);
   if (fd < 0) PFATAL("Unable to create '%s'", fn);
   ck_write(fd, mem, len, fn);
   close(fd);
@@ -3854,7 +3854,7 @@ static void write_stats_file(double bitmap_cvg, double stability, double eps) {
   s32 fd;
   FILE* f;
 
-  fd = open(fn, O_WRONLY | O_BINARY | O_CREAT | O_TRUNC, 0600);
+  fd = open(fn, O_WRONLY | O_BINARY | O_CREAT | O_TRUNC, DEFAULT_PERMISSION);
 
   if (fd < 0) PFATAL("Unable to create '%s'", fn);
 
@@ -5021,7 +5021,7 @@ write_trimmed:
 
     unlink(q->fname); /* ignore errors */
 
-    fd = open(q->fname, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, 0600);
+    fd = open(q->fname, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, DEFAULT_PERMISSION);
 
     if (fd < 0) PFATAL("Unable to create '%s'", q->fname);
 
@@ -7142,7 +7142,7 @@ static void sync_fuzzers(char** argv) {
 
 	qd_synced_path = alloc_printf("%s\\.synced\\%s", out_dir, sd.cFileName);
 
-    id_fd = open(qd_synced_path, O_RDWR | O_BINARY | O_CREAT, 0600);
+    id_fd = open(qd_synced_path, O_RDWR | O_BINARY | O_CREAT, DEFAULT_PERMISSION);
 
     if (id_fd < 0) PFATAL("Unable to create '%s'", qd_synced_path);
 
@@ -7487,7 +7487,7 @@ static void setup_dirs_fds(void) {
   /* Gnuplot output file. */
 
   tmp = alloc_printf("%s\\plot_data", out_dir);
-  fd = open(tmp, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, 0600);
+  fd = open(tmp, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, DEFAULT_PERMISSION);
   if (fd < 0) PFATAL("Unable to create '%s'", tmp);
   ck_free(tmp);
 
@@ -7523,7 +7523,7 @@ static void setup_stdio_file(void) {
 
   unlink(fn); /* Ignore errors */
 
-  out_fd = open(fn, O_RDWR | O_BINARY | O_CREAT | O_EXCL, 0600);
+  out_fd = open(fn, O_RDWR | O_BINARY | O_CREAT | O_EXCL, DEFAULT_PERMISSION);
 
   if (out_fd < 0) PFATAL("Unable to create '%s'", fn);
 
