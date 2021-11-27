@@ -7371,8 +7371,10 @@ static void usage(u8* argv0) {
        "  -M \\ -S id   - distributed mode (see parallel_fuzzing.txt)\n"
        "  -C            - crash exploration mode (the peruvian rabbit thing)\n"
        "  -e            - expert mode to run WinAFL as a DynamoRIO tool\n"
-       "  -l path       - a path to user-defined DLL for custom test cases processing\n\n"
-       "Attach:\n"
+       "  -l path       - a path to user-defined DLL for custom test cases processing\n"
+       "  -V            - show version number and exit\n\n"
+
+       "Attach:\n\n"
        "  -A module     - attach to the process that loaded the provided module\n\n"
 
        "For additional tips, please consult %s\\README.\n\n",
@@ -8033,7 +8035,7 @@ int main(int argc, char** argv) {
   client_params = NULL;
   winafl_dll_path = NULL;
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:I:T:sdYnCB:S:M:x:QD:b:l:pPc:w:A:e")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:t:I:T:sdYnCB:S:M:x:QD:b:l:pPc:w:A:eV")) > 0)
 
     switch (opt) {
       case 's':
@@ -8284,6 +8286,11 @@ int main(int argc, char** argv) {
         if (expert_mode) FATAL("Multiple -e options not supported");
         expert_mode = 1;
         break;
+
+     case 'V': /* Show version number */
+
+        /* Version number has been printed already, just quit. */
+        exit(0);
 
       default:
 

@@ -1139,6 +1139,10 @@ static void usage(u8* argv0) {
 
        "  -e            - look for edge coverage only, ignore hit counts\n\n"
 
+       "Other stuff:\n\n"
+
+       "  -V            - show version number and exit\n\n"
+
        "For additional tips, please consult %s/README.\n\n",
 
        argv0, EXEC_TIMEOUT, MEM_LIMIT, doc_path);
@@ -1259,7 +1263,7 @@ int main(int argc, char** argv) {
   SAYF("Based on WinAFL " cBRI VERSION cRST " by <ifratric@google.com>\n");
   SAYF("Based on AFL " cBRI VERSION cRST " by <lcamtuf@google.com>\n");
   
-  while ((opt = getopt(argc,argv,"+i:f:m:t:D:eQY")) > 0)
+  while ((opt = getopt(argc,argv,"+i:f:m:t:D:eQYV")) > 0)
 
     switch (opt) {
 
@@ -1345,6 +1349,11 @@ int main(int argc, char** argv) {
         drioless = 1;
 
         break;
+
+      case 'V': /* Show version number */
+
+        /* Version number has been printed already, just quit. */
+        exit(0);
 
       default:
 

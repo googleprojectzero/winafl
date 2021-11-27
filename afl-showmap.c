@@ -851,7 +851,8 @@ static void usage(u8* argv0) {
        "Other settings:\n\n"
 
        "  -q            - sink program's output and don't show messages\n"
-       "  -e            - show edge coverage only, ignore hit counts\n\n"
+       "  -e            - show edge coverage only, ignore hit counts\n"
+       "  -V            - show version number and exit\n\n"
 
        "This tool displays raw tuple data captured by AFL instrumentation.\n"
        "For additional help, consult %s\\README.\n\n" cRST,
@@ -1077,6 +1078,11 @@ int main(int argc, char** argv) {
         if (dynamorio_dir) FATAL("Dynamic-instrumentation (DRIO) is uncompatible with static-instrumentation");
         drioless = 1;
         break;
+
+      case 'V':
+
+        show_banner();
+        exit(0);
 
       default:
 
