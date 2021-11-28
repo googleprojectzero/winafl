@@ -197,6 +197,7 @@ static u64 total_crashes,             /* Total number of crashes          */
            unique_hangs,              /* Hangs with unique signatures     */
            total_execs,               /* Total execve() calls             */
            start_time,                /* Unix start time (ms)             */
+           prev_run_time,             /* Runtime read from prev stats file*/
            last_path_time,            /* Time for most recent path (ms)   */
            last_crash_time,           /* Time for most recent crash (ms)  */
            last_hang_time,            /* Time for most recent hang (ms)   */
@@ -3843,6 +3844,33 @@ static void find_timeout(void) {
 
 }
 
+/* Load the run_time from the stats file when resuming. */
+
+void find_run_time(void) {
+ static u8 tmp[4096]; /* Ought to be enough for anybody. */
+
+  u8  *fn, *off;
+  s32 fd, i;
+  u32 ret;
+
+  fn = alloc_printf("%s\\fuzzer_stats", out_dir);
+  fd = _open(fn, O_RDONLY | O_BINARY);
+  ck_free(fn);
+
+  if (fd < 0) return;
+
+  i = _read(fd, tmp, sizeof(tmp) - 1); (void)i; /* Ignore errors */
+  close(fd);
+
+  off = strstr(tmp, "run_time          : ");
+  if (!off) return;
+
+  ret = atoi(off + 20);
+  if (!ret) return;
+
+  prev_run_time = 1000 * ret;
+  start_time -= prev_run_time;
+}
 
 /* Update stats file for unattended monitoring. */
 
@@ -3850,6 +3878,7 @@ static void write_stats_file(double bitmap_cvg, double stability, double eps) {
 
   static double last_bcvg, last_stab, last_eps;
 
+  u64 cur_time = get_cur_time();
   u8* fn = alloc_printf("%s\\fuzzer_stats", out_dir);
   s32 fd;
   FILE* f;
@@ -3879,6 +3908,7 @@ static void write_stats_file(double bitmap_cvg, double stability, double eps) {
 
   fprintf(f, "start_time        : %llu\n"
              "last_update       : %llu\n"
+             "run_time          : %llu\n"
              "fuzzer_pid        : %u\n"
              "cycles_done       : %llu\n"
              "execs_done        : %llu\n"
@@ -3904,7 +3934,7 @@ static void write_stats_file(double bitmap_cvg, double stability, double eps) {
              "afl_banner        : %s\n"
              "afl_version       : " VERSION "\n"
              "command_line      : %s\n",
-             start_time / 1000, get_cur_time() / 1000, GetCurrentProcessId(),
+             start_time / 1000, cur_time / 1000, (cur_time - start_time) / 1000, GetCurrentProcessId(),
              queue_cycle ? (queue_cycle - 1) : 0, total_execs, eps,
              queued_paths, queued_favored, queued_discovered, queued_imported,
              max_depth, current_entry, pending_favored, pending_not_fuzzed,
@@ -8421,6 +8451,8 @@ int main(int argc, char** argv) {
   check_binary(argv[optind]);
 
   start_time = get_cur_time();
+
+  if (in_place_resume) find_run_time();
 
   if (qemu_mode)
     use_argv = get_qemu_argv(argv[0], argv + optind, argc - optind);
