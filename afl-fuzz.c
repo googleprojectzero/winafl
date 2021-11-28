@@ -4290,9 +4290,11 @@ static void maybe_delete_out_dir(void) {
     ck_free(fn);
   }
 
-  fn = alloc_printf("%s\\plot_data", out_dir);
-  if (unlink(fn) && errno != ENOENT) goto dir_cleanup_failed;
-  ck_free(fn);
+  if (!in_place_resume) {
+    fn = alloc_printf("%s\\plot_data", out_dir);
+    if (unlink(fn) && errno != ENOENT) goto dir_cleanup_failed;
+    ck_free(fn);
+  }
 
   fn = alloc_printf("%s\\drcache", out_dir);
   if(delete_subdirectories(fn)) goto dir_cleanup_failed;
