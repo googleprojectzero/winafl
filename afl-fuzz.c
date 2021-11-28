@@ -3934,8 +3934,8 @@ static void write_stats_file(double bitmap_cvg, double stability, double eps) {
              "afl_banner        : %s\n"
              "afl_version       : " VERSION "\n"
              "command_line      : %s\n",
-             start_time / 1000, cur_time / 1000, (cur_time - start_time) / 1000, GetCurrentProcessId(),
-             queue_cycle ? (queue_cycle - 1) : 0, total_execs, eps,
+             (start_time - prev_run_time) / 1000, cur_time / 1000, (prev_run_time + cur_time - start_time) / 1000, GetCurrentProcessId(),
+             queue_cycle ? (queue_cycle - 1) : 0, total_execs, total_execs / ((double)(prev_run_time + cur_time - start_time) / 1000),
              queued_paths, queued_favored, queued_discovered, queued_imported,
              max_depth, current_entry, pending_favored, pending_not_fuzzed,
              queued_variable, stability, bitmap_cvg, unique_crashes,
@@ -4388,7 +4388,7 @@ static void show_stats(void) {
 
   if (!last_execs) {
   
-    avg_exec = ((double)total_execs) * 1000 / (cur_ms - start_time);
+    avg_exec = ((double)total_execs) * 1000 / (prev_run_time + cur_ms - start_time);
 
   } else {
 
@@ -4532,7 +4532,7 @@ static void show_stats(void) {
 
   SAYF(bV bSTOP "        run time : " cRST "%-34s " bSTG bV bSTOP
        "  cycles done : %s%-4s  " bSTG bV "\n",
-       DTD(cur_ms, start_time), tmp, DI(queue_cycle - 1));
+       DTD(prev_run_time + cur_ms, start_time), tmp, DI(queue_cycle - 1));
 
   /* We want to warn people about not seeing new paths after a full cycle,
      except when resuming fuzzing or running in non-instrumented mode. */
