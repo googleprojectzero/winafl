@@ -7494,18 +7494,36 @@ static void setup_dirs_fds(void) {
 
   /* Gnuplot output file. */
 
+  int oflag = O_WRONLY | O_BINARY | O_CREAT;
   tmp = alloc_printf("%s\\plot_data", out_dir);
-  fd = open(tmp, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, DEFAULT_PERMISSION);
-  if (fd < 0) PFATAL("Unable to create '%s'", tmp);
-  ck_free(tmp);
 
-  plot_file = fdopen(fd, "w");
-  if (!plot_file) PFATAL("fdopen() failed");
+  if(!in_place_resume) {
 
-  fprintf(plot_file, "# unix_time, cycles_done, cur_path, paths_total, "
+    fd = _open(tmp, oflag | O_EXCL, DEFAULT_PERMISSION);
+    if (fd < 0) PFATAL("Unable to create '%s'", tmp);
+    ck_free(tmp);
+
+    plot_file = fdopen(fd, "w");
+    if (!plot_file) PFATAL("fdopen() failed");
+
+    fprintf(plot_file, "# unix_time, cycles_done, cur_path, paths_total, "
                      "pending_total, pending_favs, map_size, unique_crashes, "
                      "unique_hangs, max_depth, execs_per_sec\n");
                      /* ignore errors */
+  } else {
+
+    fd = _open(tmp, oflag, DEFAULT_PERMISSION);
+    if (fd < 0) PFATAL("Unable to create '%s'", tmp);
+    ck_free(tmp);
+
+    plot_file = fdopen(fd, "w");
+    if (!plot_file) PFATAL("fdopen() failed");
+
+    fseek(plot_file, 0, SEEK_END);
+
+  }
+
+  fflush(plot_file);
 
   tmp = alloc_printf("%s\\drcache", out_dir);
   if (mkdir(tmp)) PFATAL("Unable to create '%s'", tmp);
