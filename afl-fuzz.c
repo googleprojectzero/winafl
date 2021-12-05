@@ -107,6 +107,7 @@ static u8  skip_deterministic,        /* Skip deterministic stages?       */
            no_forkserver,             /* Disable forkserver?              */
            crash_mode,                /* Crash mode! Yeah!                */
            in_place_resume,           /* Attempt in-place resume?         */
+           autoresume,                /* Resume if out_dir exists?        */
            auto_changed,              /* Auto-generated tokens changed?   */
            no_cpu_meter_red,          /* Feng shui on the status screen   */
            no_arith,                  /* Skip most arithmetic ops         */
@@ -4145,6 +4146,11 @@ static void maybe_delete_out_dir(void) {
 
     fclose(f);
 
+    /* Autoresume treats a normal run as in_place_resume if a valid out dir
+       already exists. */
+
+    if (!in_place_resume && autoresume) in_place_resume = 1;
+
     /* Let's see how much work is at stake. */
 
     if (!in_place_resume && last_update - start_time > OUTPUT_GRACE * 60) {
@@ -4156,8 +4162,8 @@ static void maybe_delete_out_dir(void) {
 
            "    If you wish to start a new session, remove or rename the directory manually,\n"
            "    or specify a different output location for this job. To resume the old\n"
-           "    session, put '-' as the input directory in the command line ('-i -') and\n"
-           "    try again.\n", OUTPUT_GRACE);
+           "    session, put '-' as the input directory in the command line ('-i -') or\n"
+           "    set the AFL_AUTORESUME=1 env variable and try again.\n", OUTPUT_GRACE);
 
        FATAL("At-risk data found in '%s'", out_dir);
 
@@ -8396,6 +8402,7 @@ int main(int argc, char** argv) {
   if (getenv("AFL_NO_ARITH"))      no_arith = 1;
   if (getenv("AFL_SHUFFLE_QUEUE")) shuffle_queue    = 1;
   if (getenv("AFL_NO_SINKHOLE"))   sinkhole_stds    = 0;
+  if (getenv("AFL_AUTORESUME"))    autoresume       = 1;
 
   if (dumb_mode == 2 && no_forkserver)
     FATAL("AFL_DUMB_FORKSRV and AFL_NO_FORKSRV are mutually exclusive");
