@@ -3845,32 +3845,106 @@ static void find_timeout(void) {
 
 }
 
-/* Load the run_time from the stats file when resuming. */
+/* Load some of the existing stats file when resuming. */
 
-void find_run_time(void) {
- static u8 tmp[4096]; /* Ought to be enough for anybody. */
+void load_stats_file(void) {
 
-  u8  *fn, *off;
-  s32 fd, i;
-  u32 ret;
+    FILE* f;
+    u8    buf[MAX_LINE];
+    u8* lptr;
+    u8    fn[MAX_PATH];
+    u32   lineno = 0;
 
-  fn = alloc_printf("%s\\fuzzer_stats", out_dir);
-  fd = _open(fn, O_RDONLY | O_BINARY);
-  ck_free(fn);
+    snprintf(fn, MAX_PATH, "%s\\fuzzer_stats", out_dir);
+    f = fopen(fn, "r");
+    if (!f) {
 
-  if (fd < 0) return;
+        WARNF("Unable to load stats file '%s'", fn);
+        return;
 
-  i = _read(fd, tmp, sizeof(tmp) - 1); (void)i; /* Ignore errors */
-  close(fd);
+    }
 
-  off = strstr(tmp, "run_time          : ");
-  if (!off) return;
+    while ((lptr = fgets(buf, MAX_LINE, f))) {
 
-  ret = atoi(off + 20);
-  if (!ret) return;
+        lineno++;
+        u8* lstartptr = lptr;
+        u8* rptr = lptr + strlen(lptr) - 1;
+        u8  keystring[MAX_LINE];
+        while (*lptr != ':' && lptr < rptr) {
 
-  prev_run_time = 1000 * ret;
-  start_time -= prev_run_time;
+            lptr++;
+
+        }
+
+        if (*lptr == '\n' || !*lptr) {
+
+            WARNF("Unable to read line %d of stats file", lineno);
+            continue;
+
+        }
+
+        if (*lptr == ':') {
+
+            *lptr = 0;
+            strcpy(keystring, lstartptr);
+            lptr++;
+            char* nptr;
+            switch (lineno) {
+
+            case 3:
+                if (!strcmp(keystring, "run_time          "))
+                    prev_run_time = 1000 * strtoull(lptr, &nptr, 10);
+                break;
+            case 5:
+                if (!strcmp(keystring, "cycles_done       "))
+                    queue_cycle = strtoull(lptr, &nptr, 10) ? strtoull(lptr, &nptr, 10) + 1 : 0;
+                break;
+            case 6:
+                if (!strcmp(keystring, "execs_done        "))
+                    total_execs = strtoull(lptr, &nptr, 10);
+                break;
+            case 8:
+                if (!strcmp(keystring, "paths_total       ")) {
+
+                    u32 paths_total = strtoul(lptr, &nptr, 10);
+                    if (paths_total != queued_paths) {
+                        WARNF("Queue has been modified, so things might not work, you're on your own!");
+                    }
+
+                }
+                break;
+            case 10:
+                if (!strcmp(keystring, "paths_found       "))
+                    queued_discovered = strtoul(lptr, &nptr, 10);
+                break;
+            case 11:
+                if (!strcmp(keystring, "paths_imported    "))
+                    queued_imported = strtoul(lptr, &nptr, 10);
+                break;
+            case 12:
+                if (!strcmp(keystring, "max_depth         "))
+                    max_depth = strtoul(lptr, &nptr, 10);
+                break;
+            case 19:
+                if (!strcmp(keystring, "unique_crashes    "))
+                    unique_crashes = strtoull(lptr, &nptr, 10);
+                break;
+            case 20:
+                if (!strcmp(keystring, "unique_hangs      "))
+                    unique_hangs = strtoull(lptr, &nptr, 10);
+                break;
+            default:
+                break;
+
+            }
+
+        }
+
+    }
+
+    if (unique_crashes) { write_crash_readme(); }
+
+    return;
 }
 
 /* Update stats file for unattended monitoring. */
@@ -8460,8 +8534,6 @@ int main(int argc, char** argv) {
 
   start_time = get_cur_time();
 
-  if (in_place_resume) find_run_time();
-
   if (qemu_mode)
     use_argv = get_qemu_argv(argv[0], argv + optind, argc - optind);
   else
@@ -8475,6 +8547,8 @@ int main(int argc, char** argv) {
 
   seek_to = find_start_position();
 
+  start_time = get_cur_time();
+  if (in_place_resume || autoresume) load_stats_file();
   write_stats_file(0, 0, 0);
   save_auto();
 
