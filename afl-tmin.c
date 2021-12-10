@@ -336,7 +336,7 @@ static void write_to_file(u8* path, u8* mem, u32 len) {
 
   _unlink(path); /* Ignore errors */
 
-  ret = _open(path, O_RDWR | O_CREAT | O_EXCL | O_BINARY, 0600);
+  ret = _open(path, O_RDWR | O_CREAT | O_EXCL | O_BINARY, DEFAULT_PERMISSION);
 
   if (ret < 0) PFATAL("Unable to create '%s'", path);
 
@@ -1152,6 +1152,10 @@ static void usage(u8* argv0) {
        "  -e            - solve for edge coverage only, ignore hit counts\n"
        "  -x            - treat non-zero exit codes as crashes\n\n"
 
+       "Other stuff:\n\n"
+
+       "  -V            - show version number and exit\n\n"
+
        "For additional tips, please consult %s/README.\n\n",
 
        argv0, EXEC_TIMEOUT, MEM_LIMIT, doc_path);
@@ -1282,7 +1286,7 @@ int main(int argc, char** argv) {
   SAYF("Based on WinAFL " cBRI VERSION cRST " by <ifratric@google.com>\n");
   SAYF("Based on AFL " cBRI VERSION cRST " by <lcamtuf@google.com>\n");
 
-  while ((opt = getopt(argc,argv,"+i:o:f:m:t:B:D:xeQY")) > 0)
+  while ((opt = getopt(argc,argv,"+i:o:f:m:t:B:D:xeQYV")) > 0)
 
     switch (opt) {
 
@@ -1402,6 +1406,11 @@ int main(int argc, char** argv) {
         drioless = 1;
 
         break;
+
+     case 'V': /* Show version number */
+
+        /* Version number has been printed already, just quit. */
+        exit(0);
 
       default:
 

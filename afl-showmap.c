@@ -284,7 +284,7 @@ static u32 write_results(void) {
 
   if (!strncmp(out_file, "/dev/", 5)) {
 
-    fd = _open(out_file, O_WRONLY, 0600);
+    fd = _open(out_file, O_WRONLY, DEFAULT_PERMISSION);
     if (fd < 0) PFATAL("Unable to open '%s'", out_file);
 
   } else if (!strcmp(out_file, "-")) {
@@ -295,7 +295,7 @@ static u32 write_results(void) {
   } else {
 
     _unlink(out_file); /* Ignore errors */
-    fd = _open(out_file, O_WRONLY | O_CREAT | O_EXCL, 0600);
+    fd = _open(out_file, O_WRONLY | O_CREAT | O_EXCL, DEFAULT_PERMISSION);
     if (fd < 0) PFATAL("Unable to create '%s'", out_file);
 
   }
@@ -851,7 +851,8 @@ static void usage(u8* argv0) {
        "Other settings:\n\n"
 
        "  -q            - sink program's output and don't show messages\n"
-       "  -e            - show edge coverage only, ignore hit counts\n\n"
+       "  -e            - show edge coverage only, ignore hit counts\n"
+       "  -V            - show version number and exit\n\n"
 
        "This tool displays raw tuple data captured by AFL instrumentation.\n"
        "For additional help, consult %s\\README.\n\n" cRST,
@@ -1077,6 +1078,11 @@ int main(int argc, char** argv) {
         if (dynamorio_dir) FATAL("Dynamic-instrumentation (DRIO) is uncompatible with static-instrumentation");
         drioless = 1;
         break;
+
+      case 'V':
+
+        show_banner();
+        exit(0);
 
       default:
 
