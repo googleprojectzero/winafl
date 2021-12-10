@@ -86,6 +86,10 @@ will have a more striking effect. For this tool, 0 is not a valid choice.
 The main fuzzer binary accepts several options that disable a couple of sanity
 checks or alter some of the more exotic semantics of the tool:
 
+  - Setting AFL_AUTORESUME will resume a fuzz run (same as providing `-i -`)
+    for an existing out folder, even if a different `-i` was provided.
+    Without this setting, afl-fuzz will refuse execution for a long-fuzzed out dir.
+
   - Setting AFL_SKIP_CPUFREQ skips the check for CPU scaling policy. This is
     useful if you can't change the defaults (e.g., no root access to the
     system) and are OK with some performance loss.

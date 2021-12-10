@@ -24,9 +24,9 @@ set terminal png truecolor enhanced size 1000,300 butt
 
 set output '{outdir}/high_freq.png'
 
-set xdata time
-set timefmt '%s'
-set format x "%b %d\\n%H:%M"
+#set xdata time
+#set timefmt '%s'
+#set format x "%b %d\\n%H:%M"
 set tics font 'small'
 unset mxtics
 unset mytics
@@ -39,6 +39,8 @@ set key outside
 
 set autoscale xfixmin
 set autoscale xfixmax
+
+set xlabel "relative time in seconds" font "small"
 
 plot '{fuzzer_dir}/plot_data' using 1:4 with filledcurve x1 title 'total paths' linecolor rgb '#000000' fillstyle transparent solid 0.2 noborder, \\
      '' using 1:3 with filledcurve x1 title 'current path' linecolor rgb '#f0f0f0' fillstyle transparent solid 0.5 noborder, \\

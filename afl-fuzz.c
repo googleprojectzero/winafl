@@ -107,6 +107,7 @@ static u8  skip_deterministic,        /* Skip deterministic stages?       */
            no_forkserver,             /* Disable forkserver?              */
            crash_mode,                /* Crash mode! Yeah!                */
            in_place_resume,           /* Attempt in-place resume?         */
+           autoresume,                /* Resume if out_dir exists?        */
            auto_changed,              /* Auto-generated tokens changed?   */
            no_cpu_meter_red,          /* Feng shui on the status screen   */
            no_arith,                  /* Skip most arithmetic ops         */
@@ -197,6 +198,7 @@ static u64 total_crashes,             /* Total number of crashes          */
            unique_hangs,              /* Hangs with unique signatures     */
            total_execs,               /* Total execve() calls             */
            start_time,                /* Unix start time (ms)             */
+           prev_run_time,             /* Runtime read from prev stats file*/
            last_path_time,            /* Time for most recent path (ms)   */
            last_crash_time,           /* Time for most recent crash (ms)  */
            last_hang_time,            /* Time for most recent hang (ms)   */
@@ -3843,6 +3845,107 @@ static void find_timeout(void) {
 
 }
 
+/* Load some of the existing stats file when resuming. */
+
+void load_stats_file(void) {
+
+    FILE* f;
+    u8    buf[MAX_LINE];
+    u8* lptr;
+    u8    fn[MAX_PATH];
+    u32   lineno = 0;
+
+    snprintf(fn, MAX_PATH, "%s\\fuzzer_stats", out_dir);
+    f = fopen(fn, "r");
+    if (!f) {
+
+        WARNF("Unable to load stats file '%s'", fn);
+        return;
+
+    }
+
+    while ((lptr = fgets(buf, MAX_LINE, f))) {
+
+        lineno++;
+        u8* lstartptr = lptr;
+        u8* rptr = lptr + strlen(lptr) - 1;
+        u8  keystring[MAX_LINE];
+        while (*lptr != ':' && lptr < rptr) {
+
+            lptr++;
+
+        }
+
+        if (*lptr == '\n' || !*lptr) {
+
+            WARNF("Unable to read line %d of stats file", lineno);
+            continue;
+
+        }
+
+        if (*lptr == ':') {
+
+            *lptr = 0;
+            strcpy(keystring, lstartptr);
+            lptr++;
+            char* nptr;
+            switch (lineno) {
+
+            case 3:
+                if (!strcmp(keystring, "run_time          "))
+                    prev_run_time = 1000 * strtoull(lptr, &nptr, 10);
+                break;
+            case 5:
+                if (!strcmp(keystring, "cycles_done       "))
+                    queue_cycle = strtoull(lptr, &nptr, 10) ? strtoull(lptr, &nptr, 10) + 1 : 0;
+                break;
+            case 6:
+                if (!strcmp(keystring, "execs_done        "))
+                    total_execs = strtoull(lptr, &nptr, 10);
+                break;
+            case 8:
+                if (!strcmp(keystring, "paths_total       ")) {
+
+                    u32 paths_total = strtoul(lptr, &nptr, 10);
+                    if (paths_total != queued_paths) {
+                        WARNF("Queue has been modified, so things might not work, you're on your own!");
+                    }
+
+                }
+                break;
+            case 10:
+                if (!strcmp(keystring, "paths_found       "))
+                    queued_discovered = strtoul(lptr, &nptr, 10);
+                break;
+            case 11:
+                if (!strcmp(keystring, "paths_imported    "))
+                    queued_imported = strtoul(lptr, &nptr, 10);
+                break;
+            case 12:
+                if (!strcmp(keystring, "max_depth         "))
+                    max_depth = strtoul(lptr, &nptr, 10);
+                break;
+            case 19:
+                if (!strcmp(keystring, "unique_crashes    "))
+                    unique_crashes = strtoull(lptr, &nptr, 10);
+                break;
+            case 20:
+                if (!strcmp(keystring, "unique_hangs      "))
+                    unique_hangs = strtoull(lptr, &nptr, 10);
+                break;
+            default:
+                break;
+
+            }
+
+        }
+
+    }
+
+    if (unique_crashes) { write_crash_readme(); }
+
+    return;
+}
 
 /* Update stats file for unattended monitoring. */
 
@@ -3850,6 +3953,7 @@ static void write_stats_file(double bitmap_cvg, double stability, double eps) {
 
   static double last_bcvg, last_stab, last_eps;
 
+  u64 cur_time = get_cur_time();
   u8* fn = alloc_printf("%s\\fuzzer_stats", out_dir);
   s32 fd;
   FILE* f;
@@ -3879,6 +3983,7 @@ static void write_stats_file(double bitmap_cvg, double stability, double eps) {
 
   fprintf(f, "start_time        : %llu\n"
              "last_update       : %llu\n"
+             "run_time          : %llu\n"
              "fuzzer_pid        : %u\n"
              "cycles_done       : %llu\n"
              "execs_done        : %llu\n"
@@ -3904,8 +4009,8 @@ static void write_stats_file(double bitmap_cvg, double stability, double eps) {
              "afl_banner        : %s\n"
              "afl_version       : " VERSION "\n"
              "command_line      : %s\n",
-             start_time / 1000, get_cur_time() / 1000, GetCurrentProcessId(),
-             queue_cycle ? (queue_cycle - 1) : 0, total_execs, eps,
+             (start_time - prev_run_time) / 1000, cur_time / 1000, (prev_run_time + cur_time - start_time) / 1000, GetCurrentProcessId(),
+             queue_cycle ? (queue_cycle - 1) : 0, total_execs, total_execs / ((double)(prev_run_time + cur_time - start_time) / 1000),
              queued_paths, queued_favored, queued_discovered, queued_imported,
              max_depth, current_entry, pending_favored, pending_not_fuzzed,
              queued_variable, stability, bitmap_cvg, unique_crashes,
@@ -3926,10 +4031,11 @@ static void maybe_update_plot_file(double bitmap_cvg, double eps) {
   static u32 prev_qp, prev_pf, prev_pnf, prev_ce, prev_md;
   static u64 prev_qc, prev_uc, prev_uh;
 
-  if (prev_qp == queued_paths && prev_pf == pending_favored && 
+  if ((prev_qp == queued_paths && prev_pf == pending_favored &&
       prev_pnf == pending_not_fuzzed && prev_ce == current_entry &&
       prev_qc == queue_cycle && prev_uc == unique_crashes &&
-      prev_uh == unique_hangs && prev_md == max_depth) return;
+      prev_uh == unique_hangs && prev_md == max_depth) ||
+      (get_cur_time() - start_time <= 60)) return;
 
   prev_qp  = queued_paths;
   prev_pf  = pending_favored;
@@ -3942,13 +4048,13 @@ static void maybe_update_plot_file(double bitmap_cvg, double eps) {
 
   /* Fields in the file:
 
-     unix_time, cycles_done, cur_path, paths_total, paths_not_fuzzed,
+     relative_time, cycles_done, cur_path, paths_total, paths_not_fuzzed,
      favored_not_fuzzed, unique_crashes, unique_hangs, max_depth,
      execs_per_sec */
 
   fprintf(plot_file, 
           "%llu, %llu, %u, %u, %u, %u, %0.02f%%, %llu, %llu, %u, %0.02f\n",
-          get_cur_time() / 1000, queue_cycle - 1, current_entry, queued_paths,
+          ((prev_run_time + get_cur_time() - start_time) / 1000), queue_cycle - 1, current_entry, queued_paths,
           pending_not_fuzzed, pending_favored, bitmap_cvg, unique_crashes,
           unique_hangs, max_depth, eps); /* ignore errors */
 
@@ -4114,6 +4220,11 @@ static void maybe_delete_out_dir(void) {
 
     fclose(f);
 
+    /* Autoresume treats a normal run as in_place_resume if a valid out dir
+       already exists. */
+
+    if (!in_place_resume && autoresume) in_place_resume = 1;
+
     /* Let's see how much work is at stake. */
 
     if (!in_place_resume && last_update - start_time > OUTPUT_GRACE * 60) {
@@ -4125,8 +4236,8 @@ static void maybe_delete_out_dir(void) {
 
            "    If you wish to start a new session, remove or rename the directory manually,\n"
            "    or specify a different output location for this job. To resume the old\n"
-           "    session, put '-' as the input directory in the command line ('-i -') and\n"
-           "    try again.\n", OUTPUT_GRACE);
+           "    session, put '-' as the input directory in the command line ('-i -') or\n"
+           "    set the AFL_AUTORESUME=1 env variable and try again.\n", OUTPUT_GRACE);
 
        FATAL("At-risk data found in '%s'", out_dir);
 
@@ -4290,9 +4401,11 @@ static void maybe_delete_out_dir(void) {
     ck_free(fn);
   }
 
-  fn = alloc_printf("%s\\plot_data", out_dir);
-  if (unlink(fn) && errno != ENOENT) goto dir_cleanup_failed;
-  ck_free(fn);
+  if (!in_place_resume) {
+    fn = alloc_printf("%s\\plot_data", out_dir);
+    if (unlink(fn) && errno != ENOENT) goto dir_cleanup_failed;
+    ck_free(fn);
+  }
 
   fn = alloc_printf("%s\\drcache", out_dir);
   if(delete_subdirectories(fn)) goto dir_cleanup_failed;
@@ -4356,7 +4469,7 @@ static void show_stats(void) {
 
   if (!last_execs) {
   
-    avg_exec = ((double)total_execs) * 1000 / (cur_ms - start_time);
+    avg_exec = ((double)total_execs) * 1000 / (prev_run_time + cur_ms - start_time);
 
   } else {
 
@@ -4500,7 +4613,7 @@ static void show_stats(void) {
 
   SAYF(bV bSTOP "        run time : " cRST "%-34s " bSTG bV bSTOP
        "  cycles done : %s%-4s  " bSTG bV "\n",
-       DTD(cur_ms, start_time), tmp, DI(queue_cycle - 1));
+       DTD(prev_run_time + cur_ms, start_time), tmp, DI(queue_cycle - 1));
 
   /* We want to warn people about not seeing new paths after a full cycle,
      except when resuming fuzzing or running in non-instrumented mode. */
@@ -7495,18 +7608,36 @@ static void setup_dirs_fds(void) {
 
   /* Gnuplot output file. */
 
+  int oflag = O_WRONLY | O_BINARY | O_CREAT;
   tmp = alloc_printf("%s\\plot_data", out_dir);
-  fd = open(tmp, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, DEFAULT_PERMISSION);
-  if (fd < 0) PFATAL("Unable to create '%s'", tmp);
-  ck_free(tmp);
 
-  plot_file = fdopen(fd, "w");
-  if (!plot_file) PFATAL("fdopen() failed");
+  if(!in_place_resume) {
 
-  fprintf(plot_file, "# unix_time, cycles_done, cur_path, paths_total, "
+    fd = _open(tmp, oflag | O_EXCL, DEFAULT_PERMISSION);
+    if (fd < 0) PFATAL("Unable to create '%s'", tmp);
+    ck_free(tmp);
+
+    plot_file = fdopen(fd, "w");
+    if (!plot_file) PFATAL("fdopen() failed");
+
+    fprintf(plot_file, "# relative_time, cycles_done, cur_path, paths_total, "
                      "pending_total, pending_favs, map_size, unique_crashes, "
                      "unique_hangs, max_depth, execs_per_sec\n");
                      /* ignore errors */
+  } else {
+
+    fd = _open(tmp, oflag, DEFAULT_PERMISSION);
+    if (fd < 0) PFATAL("Unable to create '%s'", tmp);
+    ck_free(tmp);
+
+    plot_file = fdopen(fd, "w");
+    if (!plot_file) PFATAL("fdopen() failed");
+
+    fseek(plot_file, 0, SEEK_END);
+
+  }
+
+  fflush(plot_file);
 
   tmp = alloc_printf("%s\\drcache", out_dir);
   if (mkdir(tmp)) PFATAL("Unable to create '%s'", tmp);
@@ -8348,6 +8479,7 @@ int main(int argc, char** argv) {
   if (getenv("AFL_NO_ARITH"))      no_arith = 1;
   if (getenv("AFL_SHUFFLE_QUEUE")) shuffle_queue    = 1;
   if (getenv("AFL_NO_SINKHOLE"))   sinkhole_stds    = 0;
+  if (getenv("AFL_AUTORESUME"))    autoresume       = 1;
 
   if (dumb_mode == 2 && no_forkserver)
     FATAL("AFL_DUMB_FORKSRV and AFL_NO_FORKSRV are mutually exclusive");
@@ -8418,6 +8550,8 @@ int main(int argc, char** argv) {
 
   seek_to = find_start_position();
 
+  start_time = get_cur_time();
+  if (in_place_resume || autoresume) load_stats_file();
   write_stats_file(0, 0, 0);
   save_auto();
 
