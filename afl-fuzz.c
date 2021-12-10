@@ -5018,10 +5018,13 @@ write_trimmed:
   if (needs_write) {
 
     s32 fd;
+    int oflag = O_WRONLY | O_BINARY | O_CREAT;
 
-    unlink(q->fname); /* ignore errors */
-
-    fd = open(q->fname, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, DEFAULT_PERMISSION);
+    if (!unlink(q->fname)) {
+        fd = open(q->fname, oflag | O_EXCL, DEFAULT_PERMISSION);
+    } else {
+        fd = open(q->fname, oflag | O_TRUNC, DEFAULT_PERMISSION);
+    }
 
     if (fd < 0) PFATAL("Unable to create '%s'", q->fname);
 
