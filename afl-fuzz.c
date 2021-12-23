@@ -4148,7 +4148,7 @@ static double get_cur_utilization(void) {
     PDH_FMT_COUNTERVALUE cpuCounter;
 
     PdhCollectQueryData(cpuQuery);
-    PdhGetFormattedCounterValue(cpuTotal, PDH_FMT_DOUBLE, (DWORD)NULL, &cpuCounter);
+    PdhGetFormattedCounterValue(cpuTotal, PDH_FMT_DOUBLE, NULL, &cpuCounter);
 
     return cpuCounter.doubleValue;
 }
@@ -7804,8 +7804,8 @@ static void get_core_count(void) {
   cpu_core_count = sys_info.dwNumberOfProcessors;
 
   if (cpu_core_count) {
-	PdhOpenQuery((DWORD)NULL, (DWORD)NULL, &cpuQuery);
-	PdhAddCounter(cpuQuery, TEXT("\\Processor(_Total)\\% Processor Time"), (DWORD)NULL, &cpuTotal);
+	PdhOpenQuery(NULL, (DWORD_PTR)NULL, &cpuQuery);
+	PdhAddCounter(cpuQuery, TEXT("\\Processor(_Total)\\% Processor Time"), (DWORD_PTR)NULL, &cpuTotal);
 	PdhCollectQueryData(cpuQuery);
 	Sleep(1000);
 
