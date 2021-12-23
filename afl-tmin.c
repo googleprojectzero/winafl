@@ -79,7 +79,8 @@ static u32 in_len,                    /* Input data length                 */
            missed_paths,              /* Misses due to exec path diffs     */
            exec_tmout = EXEC_TIMEOUT; /* Exec timeout (ms)                 */
 
-static u64 mem_limit = MEM_LIMIT;     /* Memory limit (MB)                 */
+static u64 mem_limit = MEM_LIMIT,     /* Memory limit (MB)                 */
+           start_time;                /* Tick count at the beginning       */
 
 static HANDLE shm_handle;             /* Handle of the SHM region         */
 static HANDLE pipe_handle;            /* Handle of the name pipe          */
@@ -1038,11 +1039,12 @@ finalize_all:
        cGRA "     File size reduced by : " cRST "%0.02f%% (to %u byte%s)\n"
        cGRA "    Characters simplified : " cRST "%0.02f%%\n"
        cGRA "     Number of execs done : " cRST "%u\n"
-       cGRA "          Fruitless execs : " cRST "path=%u crash=%u hang=%s%u\n\n",
+       cGRA "          Fruitless execs : " cRST "path=%u crash=%u hang=%s%u\n"
+       cGRA "             Elapsed time : " cRST "%f secs\n\n",
        100 - ((double)in_len) * 100 / orig_len, in_len, in_len == 1 ? "" : "s",
        ((double)(alpha_d_total)) * 100 / (in_len ? in_len : 1),
        total_execs, missed_paths, missed_crashes, missed_hangs ? cLRD : "",
-       missed_hangs);
+       missed_hangs, (GetTickCount64() - start_time) / 1000.0);
 
   if (total_execs > 50 && missed_hangs * 10 > total_execs)
     WARNF(cLRD "Frequent timeouts - results may be skewed." cRST);
@@ -1273,6 +1275,7 @@ int main(int argc, char** argv) {
   u8  mem_limit_given = 0, timeout_given = 0;
   char** use_argv;
 
+  start_time = GetTickCount64();
   doc_path = "docs";
   optind = 1;
   dynamorio_dir = NULL;
