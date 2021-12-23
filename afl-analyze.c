@@ -191,7 +191,7 @@ char *alloc_printf(const char *_str, ...) {
   _len = vsnprintf(NULL, 0, _str, argptr);
   if (_len < 0) FATAL("Whoa, snprintf() fails?!");
   _tmp = ck_alloc(_len + 1);
-  vsnprintf(_tmp, _len + 1, _str, argptr);
+  vsnprintf(_tmp, (size_t)_len + 1, _str, argptr);
   va_end(argptr);
   return _tmp;
 
@@ -537,6 +537,9 @@ static void create_target_process(char** argv) {
     pidsize = ftell(fp);
     fseek(fp,0,SEEK_SET);
     buf = (char *)malloc(pidsize+1);
+    if (!buf) {
+        FATAL("Error allocating %Iu bytes", pidsize + 1);
+    }
     fread(buf, pidsize, 1, fp);
     buf[pidsize] = 0;
     fclose(fp);
