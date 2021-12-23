@@ -110,7 +110,7 @@ static inline void* DFL_ck_alloc_nozero(u32 size) {
   if (!size) return NULL;
 
   ALLOC_CHECK_SIZE(size);
-  ret = malloc(size + ALLOC_OFF_TOTAL);
+  ret = malloc((size_t)size + ALLOC_OFF_TOTAL);
   ALLOC_CHECK_RESULT(ret, size);
 
   ret += ALLOC_OFF_HEAD;
@@ -196,7 +196,7 @@ static inline void* DFL_ck_realloc(char* orig, u32 size) {
 
 #ifndef DEBUG_BUILD
 
-  ret = realloc(orig, size + ALLOC_OFF_TOTAL);
+  ret = realloc(orig, (size_t)size + ALLOC_OFF_TOTAL);
   ALLOC_CHECK_RESULT(ret, size);
 
 #else
@@ -270,7 +270,7 @@ static inline u8* DFL_ck_strdup(u8* str) {
   size = strlen((char*)str) + 1;
 
   ALLOC_CHECK_SIZE(size);
-  ret = malloc(size + ALLOC_OFF_TOTAL);
+  ret = malloc((size_t)size + ALLOC_OFF_TOTAL);
   ALLOC_CHECK_RESULT(ret, size);
 
   ret += ALLOC_OFF_HEAD;
@@ -294,7 +294,7 @@ static inline void* DFL_ck_memdup(void* mem, u32 size) {
   if (!mem || !size) return NULL;
 
   ALLOC_CHECK_SIZE(size);
-  ret = malloc(size + ALLOC_OFF_TOTAL);
+  ret = malloc((size_t)size + ALLOC_OFF_TOTAL);
   ALLOC_CHECK_RESULT(ret, size);
   
   ret += ALLOC_OFF_HEAD;
@@ -318,7 +318,7 @@ static inline u8* DFL_ck_memdup_str(u8* mem, u32 size) {
   if (!mem || !size) return NULL;
 
   ALLOC_CHECK_SIZE(size);
-  ret = malloc(size + ALLOC_OFF_TOTAL + 1);
+  ret = malloc((size_t)size + ALLOC_OFF_TOTAL + 1);
   ALLOC_CHECK_RESULT(ret, size);
   
   ret += ALLOC_OFF_HEAD;
