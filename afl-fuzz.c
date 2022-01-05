@@ -764,16 +764,15 @@ char *alloc_printf(const char *_str, ...) {
 
 static void mark_as_det_done(struct queue_entry* q) {
 
-  u8* fn = strrchr(q->fname, '\\');
+  u8 fn[MAX_PATH];
   s32 fd;
 
-  fn = alloc_printf("%s\\queue\\.state\\deterministic_done\\%s", out_dir, fn + 1);
+  snprintf(fn, MAX_PATH, "%s\\queue\\.state\\deterministic_done\\%s", out_dir, strrchr(q->fname, '\\') + 1);
 
   fd = _open(fn, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, DEFAULT_PERMISSION);
   if (fd < 0) PFATAL("Unable to create '%s'", fn);
   _close(fd);
 
-  ck_free(fn);
 
   q->passed_det = 1;
 
@@ -785,13 +784,13 @@ static void mark_as_det_done(struct queue_entry* q) {
 
 static void mark_as_variable(struct queue_entry* q) {
 
-  u8 *fn = strrchr(q->fname, '\\') + 1, *ldest;
+  u8 fn[MAX_PATH];
+  u8 ldest[MAX_PATH];
 
-  ldest = alloc_printf("..\\..\\%s", fn);
-  fn = alloc_printf("%s\\queue\\.state\\variable_behavior\\%s", out_dir, fn);
+  u8* fn_name = strrchr(q->fname, '\\') + 1;
 
-  ck_free(ldest);
-  ck_free(fn);
+  snprintf(ldest, MAX_PATH, "..\\..\\%s", fn_name);
+  snprintf(fn, MAX_PATH, "%s\\queue\\.state\\variable_behavior\\%s", out_dir, fn_name);
 
   q->var_behavior = 1;
 
@@ -803,15 +802,14 @@ static void mark_as_variable(struct queue_entry* q) {
 
 static void mark_as_redundant(struct queue_entry* q, u8 state) {
 
-  u8* fn;
+  u8 fn[MAX_PATH];
   s32 fd;
 
   if (state == q->fs_redundant) return;
 
   q->fs_redundant = state;
 
-  fn = strrchr(q->fname, '\\');
-  fn = alloc_printf("%s\\queue\\.state\\redundant_edges\\%s", out_dir, fn + 1);
+  snprintf(fn, MAX_PATH, "%s\\queue\\.state\\redundant_edges\\%s", out_dir, strrchr(q->fname, '\\') + 1);
 
   if (state) {
 
@@ -825,7 +823,6 @@ static void mark_as_redundant(struct queue_entry* q, u8 state) {
 
   }
 
-  ck_free(fn);
 
 }
 
@@ -893,13 +890,13 @@ static void destroy_queue(void) {
 
 static void write_bitmap(void) {
 
-  u8* fname;
+  u8 fname[MAX_PATH];
   s32 fd;
 
   if (!bitmap_changed) return;
   bitmap_changed = 0;
 
-  fname = alloc_printf("%s\\fuzz_bitmap", out_dir);
+  snprintf(fname, MAX_PATH, "%s\\fuzz_bitmap", out_dir);
   fd = _open(fname, O_WRONLY | O_BINARY | O_CREAT | O_TRUNC, DEFAULT_PERMISSION);
 
   if (fd < 0) PFATAL("Unable to open '%s'", fname);
@@ -907,7 +904,6 @@ static void write_bitmap(void) {
   ck_write(fd, virgin_bits, MAP_SIZE, fname);
 
   _close(fd);
-  ck_free(fname);
 
 }
 
@@ -1681,26 +1677,26 @@ static void read_testcases(void) {
 
     __int64 st_size;
 
-    u8* fn = alloc_printf("%s\\%s", in_dir, nl[i]);
-    u8* dfn = alloc_printf("%s\\.state\\deterministic_done\\%s", in_dir, nl[i]);
+    u8* fn2 = alloc_printf("%s\\%s", in_dir, nl[i]);
+    u8 dfn[MAX_PATH];
+    snprintf(dfn, MAX_PATH, "%s\\.state\\deterministic_done\\%s", in_dir, nl[i]);
 
     u8  passed_det = 0;
 
     free(nl[i]); /* not tracked */
  
-	st_size = FileSize(fn);
+	st_size = FileSize(fn2);
 
-    if (_access(fn, 0) || (st_size < 0))
-      PFATAL("Unable to access '%s'", fn);
+    if (_access(fn2, 0) || (st_size < 0))
+      PFATAL("Unable to access '%s'", fn2);
 
     if (st_size == 0) {
-      ck_free(fn);
-      ck_free(dfn);
-      continue;
+        ck_free(fn2);
+        continue;
     }
 
     if (st_size > MAX_FILE) 
-      FATAL("Test case '%s' is too big (%s, limit is %s)", fn,
+      FATAL("Test case '%s' is too big (%s, limit is %s)", fn2,
             DMS(st_size), DMS(MAX_FILE));
 
     /* Check for metadata that indicates that deterministic fuzzing
@@ -1709,9 +1705,8 @@ static void read_testcases(void) {
        and probably very time-consuming. */
 
     if (!_access(dfn, 0)) passed_det = 1;
-    ck_free(dfn);
 
-    add_to_queue(fn, st_size, passed_det);
+    add_to_queue(fn2, st_size, passed_det);
 
   }
 
@@ -2114,7 +2109,8 @@ static void save_auto(void) {
 
   for (i = 0; i < MIN(USE_AUTO_EXTRAS, a_extras_cnt); i++) {
 
-    u8* fn = alloc_printf("%s\\queue\\.state\\auto_extras\\auto_%06u", out_dir, i);
+    u8 fn[MAX_PATH];
+    snprintf(fn, MAX_PATH, "%s\\queue\\.state\\auto_extras\\auto_%06u", out_dir, i);
     s32 fd;
 
     fd = _open(fn, O_WRONLY | O_BINARY | O_CREAT | O_TRUNC, DEFAULT_PERMISSION);
@@ -2124,7 +2120,6 @@ static void save_auto(void) {
     ck_write(fd, a_extras[i].data, a_extras[i].len, fn);
 
     _close(fd);
-    ck_free(fn);
 
   }
 
@@ -2140,7 +2135,8 @@ static void load_auto(void) {
   for (i = 0; i < USE_AUTO_EXTRAS; i++) {
 
     u8  tmp[MAX_AUTO_EXTRA + 1];
-    u8* fn = alloc_printf("%s\\.state\\auto_extras\\auto_%06u", in_dir, i);
+    u8  fn[MAX_PATH];
+    snprintf(fn, MAX_PATH, "%s\\.state\\auto_extras\\auto_%06u", in_dir, i);
     s32 fd, len;
 
     fd = _open(fn, O_RDONLY | O_BINARY, DEFAULT_PERMISSION);
@@ -2148,7 +2144,6 @@ static void load_auto(void) {
     if (fd < 0) {
 
       if (errno != ENOENT) PFATAL("Unable to open '%s'", fn);
-      ck_free(fn);
       break;
 
     }
@@ -2164,7 +2159,6 @@ static void load_auto(void) {
       maybe_add_auto(tmp, len);
 
     _close(fd);
-    ck_free(fn);
 
   }
 
@@ -3516,12 +3510,12 @@ static u8* describe_op(u8 hnb) {
 
 static void write_crash_readme(void) {
 
-  u8* fn = alloc_printf("%s\\crashes\\README.txt", out_dir);
+  u8 fn[MAX_PATH];
   s32 fd;
   FILE* f;
 
+  snprintf(fn, MAX_PATH, "%s\\crashes\\README.txt", out_dir);
   fd = open(fn, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, DEFAULT_PERMISSION);
-  ck_free(fn);
 
   /* Do not die on errors here - that would be impolite. */
 
@@ -3565,10 +3559,13 @@ static void write_crash_readme(void) {
 
 static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 
-  u8  *fn,*exception_name = "";
+  u8* queue_fn = "";
   u8  hnb;
   s32 fd;
   u8  keeping = 0, res;
+
+  u8 fn[MAX_PATH];
+  u8 exception_name[MAX_PATH];
 
   if (fault == crash_mode) {
 
@@ -3582,16 +3579,16 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 
 #ifndef SIMPLE_FILES
 
-    fn = alloc_printf("%s\\queue\\id:%06u,%s", out_dir, queued_paths,
+    queue_fn = alloc_printf("%s\\queue\\id:%06u,%s", out_dir, queued_paths,
                       describe_op(hnb));
 
 #else
 
-    fn = alloc_printf("%s\\queue\\id_%06u", out_dir, queued_paths);
+    queue_fn = alloc_printf("%s\\queue\\id_%06u", out_dir, queued_paths);
 
 #endif /* ^!SIMPLE_FILES */
 
-    add_to_queue(fn, len, 0);
+    add_to_queue(queue_fn, len, 0);
 
     if (hnb == 2) {
       queue_top->has_new_cov = 1;
@@ -3608,9 +3605,9 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
     if (res == FAULT_ERROR)
       FATAL("Unable to execute target application");
 
-    fd = open(fn, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, DEFAULT_PERMISSION);
-    if (fd < 0) PFATAL("Unable to create '%s'", fn);
-    ck_write(fd, mem, len, fn);
+    fd = open(queue_fn, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, DEFAULT_PERMISSION);
+    if (fd < 0) PFATAL("Unable to create '%s'", queue_fn);
+    ck_write(fd, mem, len, queue_fn);
     close(fd);
 
     keeping = 1;
@@ -3660,12 +3657,12 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 
 #ifndef SIMPLE_FILES
 
-      fn = alloc_printf("%s\\hangs\\id:%06llu,%s", out_dir,
+      snprintf(fn, MAX_PATH, "%s\\hangs\\id:%06llu,%s", out_dir,
                         unique_hangs, describe_op(0));
 
 #else
 
-      fn = alloc_printf("%s\\hangs\\id_%06llu", out_dir,
+      snprintf(fn, MAX_PATH, "%s\\hangs\\id_%06llu", out_dir,
                         unique_hangs);
 
 #endif /* ^!SIMPLE_FILES */
@@ -3680,38 +3677,38 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 
 		switch (ret_exception_code) {
 		case EXCEPTION_ACCESS_VIOLATION:
-			exception_name = alloc_printf("%s", "EXCEPTION_ACCESS_VIOLATION");
+			snprintf(exception_name, MAX_PATH, "%s", "EXCEPTION_ACCESS_VIOLATION");
 			break;
 
 		case EXCEPTION_ILLEGAL_INSTRUCTION:
-			exception_name = alloc_printf("%s", "EXCEPTION_ILLEGAL_INSTRUCTION");
+			snprintf(exception_name, MAX_PATH, "%s", "EXCEPTION_ILLEGAL_INSTRUCTION");
 			break;
 
 		case EXCEPTION_PRIV_INSTRUCTION:
-			exception_name = alloc_printf("%s", "EXCEPTION_PRIV_INSTRUCTION");
+			snprintf(exception_name, MAX_PATH, "%s", "EXCEPTION_PRIV_INSTRUCTION");
 			break;
 
 		case EXCEPTION_INT_DIVIDE_BY_ZERO:
-			exception_name = alloc_printf("%s", "EXCEPTION_INT_DIVIDE_BY_ZERO");
+			snprintf(exception_name, MAX_PATH, "%s", "EXCEPTION_INT_DIVIDE_BY_ZERO");
 			break;
 
 		case STATUS_HEAP_CORRUPTION:
-			exception_name = alloc_printf("%s", "STATUS_HEAP_CORRUPTION");
+			snprintf(exception_name, MAX_PATH, "%s", "STATUS_HEAP_CORRUPTION");
 			break;
 
 		case EXCEPTION_STACK_OVERFLOW:
-			exception_name = alloc_printf("%s", "EXCEPTION_STACK_OVERFLOW");
+			snprintf(exception_name, MAX_PATH, "%s", "EXCEPTION_STACK_OVERFLOW");
 			break;
 
 		case STATUS_STACK_BUFFER_OVERRUN:
-			exception_name = alloc_printf("%s", "STATUS_STACK_BUFFER_OVERRUN");
+			snprintf(exception_name, MAX_PATH, "%s", "STATUS_STACK_BUFFER_OVERRUN");
 			break;
 
 		case STATUS_FATAL_APP_EXIT:
-			exception_name = alloc_printf("%s", "STATUS_FATAL_APP_EXIT");
+			snprintf(exception_name, MAX_PATH, "%s", "STATUS_FATAL_APP_EXIT");
 			break;
 		default:
-			exception_name = alloc_printf("%s", "EXCEPTION_NAME_NOT_AVAILABLE");
+			snprintf(exception_name, MAX_PATH, "%s", "EXCEPTION_NAME_NOT_AVAILABLE");
 		}
       /* This is handled in a manner roughly similar to timeouts,
          except for slightly different limits and no need to re-run test
@@ -3737,12 +3734,12 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 
 #ifndef SIMPLE_FILES
 
-      fn = alloc_printf("%s\\crashes\\id:%06llu,sig:%02u,%s", out_dir,
+      snprintf(fn, MAX_PATH, "%s\\crashes\\id:%06llu,sig:%02u,%s", out_dir,
                         unique_crashes, kill_signal, describe_op(0));
 
 #else
 
-      fn = alloc_printf("%s\\crashes\\id_%06llu_%02u_%s", out_dir, unique_crashes,
+      snprintf(fn, MAX_PATH, "%s\\crashes\\id_%06llu_%02u_%s", out_dir, unique_crashes,
                         kill_signal, exception_name);
 
 #endif /* ^!SIMPLE_FILES */
@@ -3753,7 +3750,6 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 
       last_crash_execs = total_execs;
 
-	  ck_free(exception_name);
 	
 	  break;
 
@@ -3771,7 +3767,6 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
   ck_write(fd, mem, len, fn);
   close(fd);
 
-  ck_free(fn);
 
   return keeping;
 
@@ -3785,17 +3780,17 @@ static u32 find_start_position(void) {
 
   static u8 tmp[4096]; /* Ought to be enough for anybody. */
 
-  u8  *fn, *off;
+  u8  fn[MAX_PATH];
+  u8  *off;
   s32 fd, i;
   u32 ret;
 
   if (!resuming_fuzz) return 0;
 
-  if (in_place_resume) fn = alloc_printf("%s\\fuzzer_stats", out_dir);
-  else fn = alloc_printf("%s\\..\\fuzzer_stats", in_dir);
+  if (in_place_resume) snprintf(fn, MAX_PATH, "%s\\fuzzer_stats", out_dir);
+  else snprintf(fn, MAX_PATH, "%s\\..\\fuzzer_stats", in_dir);
 
   fd = open(fn, O_RDONLY | O_BINARY);
-  ck_free(fn);
 
   if (fd < 0) return 0;
 
@@ -3820,17 +3815,17 @@ static void find_timeout(void) {
 
   static u8 tmp[4096]; /* Ought to be enough for anybody. */
 
-  u8  *fn, *off;
+  u8  fn[MAX_PATH];
+  u8  *off;
   s32 fd, i;
   u32 ret;
 
   if (!resuming_fuzz) return;
 
-  if (in_place_resume) fn = alloc_printf("%s\\fuzzer_stats", out_dir);
-  else fn = alloc_printf("%s\\..\\fuzzer_stats", in_dir);
+  if (in_place_resume) snprintf(fn, MAX_PATH, "%s\\fuzzer_stats", out_dir);
+  else snprintf(fn, MAX_PATH, "%s\\..\\fuzzer_stats", in_dir);
 
   fd = open(fn, O_RDONLY | O_BINARY);
-  ck_free(fn);
 
   if (fd < 0) return;
 
@@ -3957,15 +3952,16 @@ static void write_stats_file(double bitmap_cvg, double stability, double eps) {
   static double last_bcvg, last_stab, last_eps;
 
   u64 cur_time = get_cur_time();
-  u8* fn = alloc_printf("%s\\fuzzer_stats", out_dir);
   s32 fd;
   FILE* f;
+
+  u8 fn[MAX_PATH];
+  snprintf(fn, MAX_PATH, "%s\\fuzzer_stats", out_dir);
 
   fd = open(fn, O_WRONLY | O_BINARY | O_CREAT | O_TRUNC, DEFAULT_PERMISSION);
 
   if (fd < 0) PFATAL("Unable to create '%s'", fn);
 
-  ck_free(fn);
 
   f = fdopen(fd, "w");
 
@@ -4093,9 +4089,9 @@ static u8 delete_files(u8* path, u8* prefix) {
 	  if (fd.cFileName[0] != '.' && (!prefix ||
         !strncmp(fd.cFileName, prefix, strlen(prefix)))) {
 
-      u8* fname = alloc_printf("%s\\%s", path, fd.cFileName);
+      u8 fname[MAX_PATH];
+      snprintf(fname, MAX_PATH, "%s\\%s", path, fd.cFileName);
       if (unlink(fname)) PFATAL("Unable to delete '%s'", fname);
-      ck_free(fname);
 
     }
 
@@ -4128,9 +4124,9 @@ static u8 delete_subdirectories(u8* path) {
 	do {
 		if (fd.cFileName[0] != '.') {
 
-			u8* fname = alloc_printf("%s\\%s", path, fd.cFileName);
+			u8 fname[MAX_PATH];
+			snprintf(fname, MAX_PATH, "%s\\%s", path, fd.cFileName);
 			if (delete_files(fname, NULL)) PFATAL("Unable to delete '%s'", fname);
-			ck_free(fname);
 
 		}
 
@@ -4161,31 +4157,25 @@ static double get_cur_utilization(void) {
 
 static void nuke_resume_dir(void) {
 
-  u8* fn;
+  u8 fn[MAX_PATH];
 
-  fn = alloc_printf("%s\\_resume\\.state\\deterministic_done", out_dir);
+  snprintf(fn, MAX_PATH, "%s\\_resume\\.state\\deterministic_done", out_dir);
   if (delete_files(fn, CASE_PREFIX)) goto dir_cleanup_failed;
-  ck_free(fn);
 
-  fn = alloc_printf("%s\\_resume\\.state\\auto_extras", out_dir);
+  snprintf(fn, MAX_PATH, "%s\\_resume\\.state\\auto_extras", out_dir);
   if (delete_files(fn, "auto_")) goto dir_cleanup_failed;
-  ck_free(fn);
 
-  fn = alloc_printf("%s\\_resume\\.state\\redundant_edges", out_dir);
+  snprintf(fn, MAX_PATH, "%s\\_resume\\.state\\redundant_edges", out_dir);
   if (delete_files(fn, CASE_PREFIX)) goto dir_cleanup_failed;
-  ck_free(fn);
 
-  fn = alloc_printf("%s\\_resume\\.state\\variable_behavior", out_dir);
+  snprintf(fn, MAX_PATH, "%s\\_resume\\.state\\variable_behavior", out_dir);
   if (delete_files(fn, CASE_PREFIX)) goto dir_cleanup_failed;
-  ck_free(fn);
 
-  fn = alloc_printf("%s\\_resume\\.state", out_dir);
+  snprintf(fn, MAX_PATH, "%s\\_resume\\.state", out_dir);
   if (rmdir(fn) && errno != ENOENT) goto dir_cleanup_failed;
-  ck_free(fn);
 
-  fn = alloc_printf("%s\\_resume", out_dir);
+  snprintf(fn, MAX_PATH, "%s\\_resume", out_dir);
   if (delete_files(fn, CASE_PREFIX)) goto dir_cleanup_failed;
-  ck_free(fn);
 
   return;
 
@@ -4202,7 +4192,11 @@ dir_cleanup_failed:
 static void maybe_delete_out_dir(void) {
 
   FILE* f;
-  u8 *fn = alloc_printf("%s\\fuzzer_stats", out_dir);
+  u8 fn[MAX_PATH];
+  u8 nfn[MAX_PATH];
+
+  snprintf(fn, MAX_PATH, "%s\\fuzzer_stats", out_dir);
+
 
   /* See if the output directory is locked. If yes, bail out. If not,
      create a lock that will persist for the lifetime of the process
@@ -4248,7 +4242,6 @@ static void maybe_delete_out_dir(void) {
 
   }
 
-  ck_free(fn);
 
   /* The idea for in-place resume is pretty simple: we temporarily move the old
      queue/ to a new location that gets deleted once import to the new queue/
@@ -4258,7 +4251,8 @@ static void maybe_delete_out_dir(void) {
 
   if (in_place_resume) {
 
-    u8* orig_q = alloc_printf("%s\\queue", out_dir);
+    u8 orig_q[MAX_PATH];
+    snprintf(orig_q, MAX_PATH, "%s\\queue", out_dir);
 
     in_dir = alloc_printf("%s\\_resume", out_dir);
 
@@ -4266,7 +4260,6 @@ static void maybe_delete_out_dir(void) {
 
     OKF("Output directory exists, will attempt session resume.");
 
-    ck_free(orig_q);
 
   } else {
 
@@ -4280,52 +4273,44 @@ static void maybe_delete_out_dir(void) {
      in <out_dir>/.synced/.../id:*, if any are present. */
   if (!in_place_resume) {
 
-    fn = alloc_printf("%s\\.synced", out_dir);
+    snprintf(fn, MAX_PATH, "%s\\.synced", out_dir);
     if (delete_files(fn, NULL)) goto dir_cleanup_failed;
-    ck_free(fn);
 
   }
 
   /* Next, we need to clean up <out_dir>/queue/.state/ subdirectories: */
 
-  fn = alloc_printf("%s\\queue\\.state\\deterministic_done", out_dir);
+  snprintf(fn, MAX_PATH, "%s\\queue\\.state\\deterministic_done", out_dir);
   if (delete_files(fn, CASE_PREFIX)) goto dir_cleanup_failed;
-  ck_free(fn);
 
-  fn = alloc_printf("%s\\queue\\.state\\auto_extras", out_dir);
+  snprintf(fn, MAX_PATH, "%s\\queue\\.state\\auto_extras", out_dir);
   if (delete_files(fn, "auto_")) goto dir_cleanup_failed;
-  ck_free(fn);
 
-  fn = alloc_printf("%s\\queue\\.state\\redundant_edges", out_dir);
+  snprintf(fn, MAX_PATH, "%s\\queue\\.state\\redundant_edges", out_dir);
   if (delete_files(fn, CASE_PREFIX)) goto dir_cleanup_failed;
-  ck_free(fn);
 
-  fn = alloc_printf("%s\\queue\\.state\\variable_behavior", out_dir);
+  snprintf(fn, MAX_PATH, "%s\\queue\\.state\\variable_behavior", out_dir);
   if (delete_files(fn, CASE_PREFIX)) goto dir_cleanup_failed;
-  ck_free(fn);
 
   /* Then, get rid of the .state subdirectory itself (should be empty by now)
      and everything matching <out_dir>/queue/id:*. */
 
-  fn = alloc_printf("%s\\queue\\.state", out_dir);
+  snprintf(fn, MAX_PATH, "%s\\queue\\.state", out_dir);
   if (rmdir(fn) && errno != ENOENT) goto dir_cleanup_failed;
-  ck_free(fn);
 
-  fn = alloc_printf("%s\\queue", out_dir);
+  snprintf(fn, MAX_PATH, "%s\\queue", out_dir);
   if (delete_files(fn, CASE_PREFIX)) goto dir_cleanup_failed;
-  ck_free(fn);
 
   /* All right, let's do <out_dir>/crashes/id:* and <out_dir>/hangs/id:*. */
 
   if (!in_place_resume) {
 
-    fn = alloc_printf("%s\\crashes\\README.txt", out_dir);
+    snprintf(fn, MAX_PATH, "%s\\crashes\\README.txt", out_dir);
     unlink(fn); /* Ignore errors */
-    ck_free(fn);
 
   }
 
-  fn = alloc_printf("%s\\crashes", out_dir);
+  snprintf(fn, MAX_PATH, "%s\\crashes", out_dir);
 
   /* Make backup of the crashes directory if it's not empty and if we're
      doing in-place resume. */
@@ -4337,27 +4322,25 @@ static void maybe_delete_out_dir(void) {
 
 #ifndef SIMPLE_FILES
 
-    u8* nfn = alloc_printf("%s.%04u-%02u-%02u-%02u:%02u:%02u", fn,
+    snprintf(nfn, MAX_PATH, "%s.%04u-%02u-%02u-%02u:%02u:%02u", fn,
                            t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
                            t->tm_hour, t->tm_min, t->tm_sec);
 
 #else
 
-    u8* nfn = alloc_printf("%s_%04u%02u%02u%02u%02u%02u", fn,
+    snprintf(nfn, MAX_PATH, "%s_%04u%02u%02u%02u%02u%02u", fn,
                            t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
                            t->tm_hour, t->tm_min, t->tm_sec);
 
 #endif /* ^!SIMPLE_FILES */
 
     (void)rename(fn, nfn); /* Ignore errors. */
-    ck_free(nfn);
 
   }
 
   if (delete_files(fn, CASE_PREFIX)) goto dir_cleanup_failed;
-  ck_free(fn);
 
-  fn = alloc_printf("%s\\hangs", out_dir);
+  snprintf(fn, MAX_PATH, "%s\\hangs", out_dir);
 
   /* Backup hangs, too. */
 
@@ -4368,55 +4351,47 @@ static void maybe_delete_out_dir(void) {
 
 #ifndef SIMPLE_FILES
 
-    u8* nfn = alloc_printf("%s.%04u-%02u-%02u-%02u:%02u:%02u", fn,
+    snprintf(nfn, MAX_PATH, "%s.%04u-%02u-%02u-%02u:%02u:%02u", fn,
                            t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
                            t->tm_hour, t->tm_min, t->tm_sec);
 
 #else
 
-    u8* nfn = alloc_printf("%s_%04u%02u%02u%02u%02u%02u", fn,
+    snprintf(nfn, MAX_PATH, "%s_%04u%02u%02u%02u%02u%02u", fn,
                            t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
                            t->tm_hour, t->tm_min, t->tm_sec);
 
 #endif /* ^!SIMPLE_FILES */
 
     (void)rename(fn, nfn); /* Ignore errors. */
-    ck_free(nfn);
 
   }
 
   if (delete_files(fn, CASE_PREFIX)) goto dir_cleanup_failed;
-  ck_free(fn);
 
   /* And now, for some finishing touches. */
 
-  fn = alloc_printf("%s\\.cur_input", out_dir);
+  snprintf(fn, MAX_PATH, "%s\\.cur_input", out_dir);
   if (unlink(fn) && errno != ENOENT) goto dir_cleanup_failed;
-  ck_free(fn);
 
-  fn = alloc_printf("%s\\fuzz_bitmap", out_dir);
+  snprintf(fn, MAX_PATH, "%s\\fuzz_bitmap", out_dir);
   if (unlink(fn) && errno != ENOENT) goto dir_cleanup_failed;
-  ck_free(fn);
 
   if (!in_place_resume) {
-    fn  = alloc_printf("%s\\fuzzer_stats", out_dir);
+    snprintf(fn, MAX_PATH, "%s\\fuzzer_stats", out_dir);
     if (unlink(fn) && errno != ENOENT) goto dir_cleanup_failed;
-    ck_free(fn);
   }
 
   if (!in_place_resume) {
-    fn = alloc_printf("%s\\plot_data", out_dir);
+    snprintf(fn, MAX_PATH, "%s\\plot_data", out_dir);
     if (unlink(fn) && errno != ENOENT) goto dir_cleanup_failed;
-    ck_free(fn);
   }
 
-  fn = alloc_printf("%s\\drcache", out_dir);
+  snprintf(fn, MAX_PATH, "%s\\drcache", out_dir);
   if(delete_subdirectories(fn)) goto dir_cleanup_failed;
-  ck_free(fn);
 
-  fn = alloc_printf("%s\\ptmodules", out_dir);
+  snprintf(fn, MAX_PATH, "%s\\ptmodules", out_dir);
   if (delete_files(fn, NULL)) goto dir_cleanup_failed;
-  ck_free(fn);
 
   OKF("Output dir cleanup successful.");
 
@@ -7288,7 +7263,7 @@ static void sync_fuzzers(char** argv) {
 
     do {
 
-      u8* path;
+      u8 path[MAX_PATH];
       s32 fd;
       struct stat st;
 
@@ -7301,14 +7276,13 @@ static void sync_fuzzers(char** argv) {
       if (syncing_case >= next_min_accept)
         next_min_accept = syncing_case + 1;
 
-      path = alloc_printf("%s\\%s", qd_path, qd.cFileName);
+      snprintf(path, MAX_PATH, "%s\\%s", qd_path, qd.cFileName);
 
       fd = open(path, O_RDONLY | O_BINARY);
 
       /* Allow this to fail in case the other fuzzer is resuming or so... */
 
       if (fd < 0) {
-         ck_free(path);
          continue;
       }
  
@@ -7341,7 +7315,6 @@ static void sync_fuzzers(char** argv) {
 
       }
 
-      ck_free(path);
       close(fd);
 
     } while(FindNextFile(h2, &qd));
@@ -7515,7 +7488,7 @@ static void usage(u8* argv0) {
 
 static void setup_dirs_fds(void) {
 
-  u8* tmp;
+  u8  tmp[MAX_PATH];
   s32 fd;
 
   ACTF("Setting up output directories...");
@@ -7540,66 +7513,57 @@ static void setup_dirs_fds(void) {
 
   /* Queue directory for any starting & discovered paths. */
 
-  tmp = alloc_printf("%s\\queue", out_dir);
+  snprintf(tmp, MAX_PATH, "%s\\queue", out_dir);
   if (mkdir(tmp)) PFATAL("Unable to create '%s'", tmp);
-  ck_free(tmp);
 
   /* Top-level directory for queue metadata used for session
      resume and related tasks. */
 
-  tmp = alloc_printf("%s\\queue\\.state\\", out_dir);
+  snprintf(tmp, MAX_PATH, "%s\\queue\\.state\\", out_dir);
   if (mkdir(tmp)) PFATAL("Unable to create '%s'", tmp);
-  ck_free(tmp);
 
   /* Directory for flagging queue entries that went through
      deterministic fuzzing in the past. */
 
-  tmp = alloc_printf("%s\\queue\\.state\\deterministic_done\\", out_dir);
+  snprintf(tmp, MAX_PATH, "%s\\queue\\.state\\deterministic_done\\", out_dir);
   if (mkdir(tmp)) PFATAL("Unable to create '%s'", tmp);
-  ck_free(tmp);
 
   /* Directory with the auto-selected dictionary entries. */
 
-  tmp = alloc_printf("%s\\queue\\.state\\auto_extras\\", out_dir);
+  snprintf(tmp, MAX_PATH, "%s\\queue\\.state\\auto_extras\\", out_dir);
   if (mkdir(tmp)) PFATAL("Unable to create '%s'", tmp);
-  ck_free(tmp);
 
   /* The set of paths currently deemed redundant. */
 
-  tmp = alloc_printf("%s\\queue\\.state\\redundant_edges\\", out_dir);
+  snprintf(tmp, MAX_PATH, "%s\\queue\\.state\\redundant_edges\\", out_dir);
   if (mkdir(tmp)) PFATAL("Unable to create '%s'", tmp);
-  ck_free(tmp);
 
   /* The set of paths showing variable behavior. */
 
-  tmp = alloc_printf("%s\\queue\\.state\\variable_behavior\\", out_dir);
+  snprintf(tmp, MAX_PATH, "%s\\queue\\.state\\variable_behavior\\", out_dir);
   if (mkdir(tmp)) PFATAL("Unable to create '%s'", tmp);
-  ck_free(tmp);
 
   /* Sync directory for keeping track of cooperating fuzzers. */
 
   if (sync_id) {
 
-    tmp = alloc_printf("%s\\.synced\\", out_dir);
+    snprintf(tmp, MAX_PATH, "%s\\.synced\\", out_dir);
     
     if (mkdir(tmp) && (!in_place_resume || errno != EEXIST)) 
       PFATAL("Unable to create '%s'", tmp);
 
-    ck_free(tmp);
 
   }
 
   /* All recorded crashes. */
 
-  tmp = alloc_printf("%s\\crashes", out_dir);
+  snprintf(tmp, MAX_PATH, "%s\\crashes", out_dir);
   if (mkdir(tmp)) PFATAL("Unable to create '%s'", tmp);
-  ck_free(tmp);
 
   /* All recorded hangs. */
 
-  tmp = alloc_printf("%s\\hangs", out_dir);
+  snprintf(tmp, MAX_PATH, "%s\\hangs", out_dir);
   if (mkdir(tmp)) PFATAL("Unable to create '%s'", tmp);
-  ck_free(tmp);
 
   /* Generally useful file descriptors. */
 
@@ -7612,13 +7576,12 @@ static void setup_dirs_fds(void) {
   /* Gnuplot output file. */
 
   int oflag = O_WRONLY | O_BINARY | O_CREAT;
-  tmp = alloc_printf("%s\\plot_data", out_dir);
+  snprintf(tmp, MAX_PATH, "%s\\plot_data", out_dir);
 
   if(!in_place_resume) {
 
     fd = _open(tmp, oflag | O_EXCL, DEFAULT_PERMISSION);
     if (fd < 0) PFATAL("Unable to create '%s'", tmp);
-    ck_free(tmp);
 
     plot_file = fdopen(fd, "w");
     if (!plot_file) PFATAL("fdopen() failed");
@@ -7631,7 +7594,6 @@ static void setup_dirs_fds(void) {
 
     fd = _open(tmp, oflag, DEFAULT_PERMISSION);
     if (fd < 0) PFATAL("Unable to create '%s'", tmp);
-    ck_free(tmp);
 
     plot_file = fdopen(fd, "w");
     if (!plot_file) PFATAL("fdopen() failed");
@@ -7642,13 +7604,11 @@ static void setup_dirs_fds(void) {
 
   fflush(plot_file);
 
-  tmp = alloc_printf("%s\\drcache", out_dir);
+  snprintf(tmp, MAX_PATH, "%s\\drcache", out_dir);
   if (mkdir(tmp)) PFATAL("Unable to create '%s'", tmp);
-  ck_free(tmp);
 
-  tmp = alloc_printf("%s\\ptmodules", out_dir);
+  snprintf(tmp, MAX_PATH, "%s\\ptmodules", out_dir);
   if (mkdir(tmp)) PFATAL("Unable to create '%s'", tmp);
-  ck_free(tmp);
 
 }
 
@@ -7662,7 +7622,8 @@ static void setup_stdio_file(void) {
     return;
   }
   
-  u8* fn = alloc_printf("%s\\.cur_input", out_dir);
+  u8 fn[MAX_PATH];
+  snprintf(fn, MAX_PATH, "%s\\.cur_input", out_dir);
 
   unlink(fn); /* Ignore errors */
 
@@ -7670,7 +7631,6 @@ static void setup_stdio_file(void) {
 
   if (out_fd < 0) PFATAL("Unable to create '%s'", fn);
 
-  ck_free(fn);
 
 }
 
