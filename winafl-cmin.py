@@ -150,7 +150,7 @@ def target_offset(opt):
 
 
 def memory_limit(opt):
-    '''Validates that the -m parameter is properly formated, else
+    '''Validates that the -m parameter is properly formatted, else
     raises an ArgumentTypeError exception back to the argparse parser.'''
     if re.match(r'^\d+[TGkM]?$', opt) or opt == 'none':
         return opt
@@ -620,7 +620,7 @@ def run_all_inputs(args, inputs):
 
 
 def find_best_candidates(uniq_tuples, candidates):
-    # Using the same strategy than in afl-cmin, quoting lcamtuf:
+    # Using the same strategy as in afl-cmin, quoting lcamtuf:
     # '''
     # The "best" part is understood simply as the smallest input that
     # includes a particular tuple in its trace. Empirical evidence
