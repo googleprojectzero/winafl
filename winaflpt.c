@@ -330,7 +330,7 @@ void build_address_ranges() {
 
 	qsort(tmp_buf, num_loaded_modules, sizeof(address_range), address_range_compare);
 
-	num_ip_ranges = num_loaded_modules * 2 + 1;
+	num_ip_ranges = (size_t)num_loaded_modules * 2 + 1;
 	coverage_ip_ranges = (address_range*)malloc(num_ip_ranges * sizeof(address_range));
 
 	uint64_t current_address = 0;

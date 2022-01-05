@@ -752,7 +752,7 @@ char *alloc_printf(const char *_str, ...) {
     _len = vsnprintf(NULL, 0, _str, argptr);
     if (_len < 0) FATAL("Whoa, snprintf() fails?!");
     _tmp = ck_alloc(_len + 1);
-    vsnprintf(_tmp, _len + 1, _str, argptr);
+    vsnprintf(_tmp, (size_t)_len + 1, _str, argptr);
     va_end(argptr);
     return _tmp;
   }
@@ -840,7 +840,7 @@ static void add_to_queue(u8* fname, u32 len, u8 passed_det) {
 
   q->fname        = fname;
   q->len          = len;
-  q->depth        = cur_depth + 1;
+  q->depth        = (u64)cur_depth + 1;
   q->passed_det   = passed_det;
 
   if (q->depth > max_depth) max_depth = (u32)(q->depth);
@@ -2564,6 +2564,9 @@ static void create_target_process(char** argv) {
     pidsize = ftell(fp);
     fseek(fp,0,SEEK_SET);
     buf = (char *)malloc(pidsize+1);
+    if (!buf) {
+        FATAL("Error allocating %Iu bytes", pidsize + 1);
+    }
     fread(buf, pidsize, 1, fp);
     buf[pidsize] = 0;
     fclose(fp);
@@ -4148,7 +4151,7 @@ static double get_cur_utilization(void) {
     PDH_FMT_COUNTERVALUE cpuCounter;
 
     PdhCollectQueryData(cpuQuery);
-    PdhGetFormattedCounterValue(cpuTotal, PDH_FMT_DOUBLE, (DWORD)NULL, &cpuCounter);
+    PdhGetFormattedCounterValue(cpuTotal, PDH_FMT_DOUBLE, NULL, &cpuCounter);
 
     return cpuCounter.doubleValue;
 }
@@ -4259,7 +4262,7 @@ static void maybe_delete_out_dir(void) {
 
     in_dir = alloc_printf("%s\\_resume", out_dir);
 
-    rename(orig_q, in_dir); /* Ignore errors */
+    (void)rename(orig_q, in_dir); /* Ignore errors */
 
     OKF("Output directory exists, will attempt session resume.");
 
@@ -4346,7 +4349,7 @@ static void maybe_delete_out_dir(void) {
 
 #endif /* ^!SIMPLE_FILES */
 
-    rename(fn, nfn); /* Ignore errors. */
+    (void)rename(fn, nfn); /* Ignore errors. */
     ck_free(nfn);
 
   }
@@ -4377,7 +4380,7 @@ static void maybe_delete_out_dir(void) {
 
 #endif /* ^!SIMPLE_FILES */
 
-    rename(fn, nfn); /* Ignore errors. */
+    (void)rename(fn, nfn); /* Ignore errors. */
     ck_free(nfn);
 
   }
@@ -7804,8 +7807,8 @@ static void get_core_count(void) {
   cpu_core_count = sys_info.dwNumberOfProcessors;
 
   if (cpu_core_count) {
-	PdhOpenQuery((DWORD)NULL, (DWORD)NULL, &cpuQuery);
-	PdhAddCounter(cpuQuery, TEXT("\\Processor(_Total)\\% Processor Time"), (DWORD)NULL, &cpuTotal);
+	PdhOpenQuery(NULL, (DWORD_PTR)NULL, &cpuQuery);
+	PdhAddCounter(cpuQuery, TEXT("\\Processor(_Total)\\% Processor Time"), (DWORD_PTR)NULL, &cpuTotal);
 	PdhCollectQueryData(cpuQuery);
 	Sleep(1000);
 
