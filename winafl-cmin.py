@@ -741,12 +741,12 @@ def main(argc, argv):
     print()
     logging.info('[+] Original set was composed of %d files', len(inputs))
     logging.info(
-        '[+] Effective set was composed of %d files (total size %d MB).',
-        effective_len, (totalsize / 1024) / 1024
+        '[+] Effective set was composed of %d files (total size %.2f MB).',
+        effective_len, (totalsize / 1024.) / 1024.
     )
     logging.info(
-        '[+] Narrowed down to %d files (total size %d MB).',
-        len(minset), (minsetsize / 1024) / 1024
+        '[+] Narrowed down to %d files (total size %.2f MB).',
+        len(minset), (minsetsize / 1024.) / 1024.
     )
 
     if args.dry_run is False:
