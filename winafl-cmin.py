@@ -357,12 +357,12 @@ def validate_args(args):
         logging.error('[!] afl-showmap.exe need to be in %s.', args.working_dir)
         return False
 
-    # Make sure the output directory doesn't exist yet
+    # Make sure the output directory doesn't exist yet, or exists but is empty
     if os.path.isabs(args.output):
         output_dir_path = args.output
     else:
         output_dir_path = os.path.join(args.working_dir, args.output)
-    if args.dry_run is False and os.path.isdir(output_dir_path):
+    if args.dry_run is False and os.path.isdir(output_dir_path) and os.listdir(output_dir_path):
         logging.error(
             '[!] %s already exists, please remove it to avoid data loss.',
             args.output
