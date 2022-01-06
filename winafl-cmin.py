@@ -324,13 +324,6 @@ def validate_args(args):
         )
         return False
 
-    # Another sanity check on the root of output directory
-    if os.path.isdir(os.path.split(args.output)[0]) is False:
-        logging.error(
-            '[!] The output directory %r is not a directory', args.output
-        )
-        return False
-        
     # Another sanity check on the root of crash directory
     if args.crash_dir and os.path.isdir(os.path.split(args.crash_dir)[0]) is False:
         logging.error(
@@ -669,7 +662,11 @@ def find_best_candidates(uniq_tuples, candidates):
 
 
 def do_unique_copy(filepaths, dest_dir):
-    os.mkdir(dest_dir)
+    try:
+        os.makedirs(dest_dir)
+    except Exception:
+        if not os.path.isdir(dest_dir):
+            raise
     num_digits = len(str(len(filepaths)-1))
     for i, fpath in enumerate(filepaths):
         filename = os.path.basename(fpath)
