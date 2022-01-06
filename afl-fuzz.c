@@ -3342,6 +3342,69 @@ static void perform_dry_run(char** argv) {
 
   }
 
+  /* Now we remove all entries from the queue that have a duplicate trace map. */
+
+  ACTF("Removing entries with a duplicate trace map...");
+
+  q = queue;
+  int duplicates = 0;
+  struct queue_entry* p, * dup = NULL;
+
+  while (q) {
+
+      if (q->cal_failed || !q->exec_cksum) {
+
+          q = q->next;
+          continue;
+
+      }
+
+      p = q->next;
+
+      while (p) {
+
+          if (!p->cal_failed && p->exec_cksum == q->exec_cksum) {
+
+              duplicates = 1;
+              --pending_not_fuzzed;
+
+              // We keep the shorter file.
+              if (p->len >= q->len) {
+                  dup = p;
+                  p->was_fuzzed = 1;
+              } else {
+                  dup = q;
+                  q->was_fuzzed = 1;
+              }
+
+              WARNF("Duplicate entry '%s' was marked as fuzzed.", strrchr(dup->fname, '\\') + 1);
+
+          }
+
+          p = p->next;
+
+      }
+
+      q = q->next;
+
+  }
+
+  if (duplicates) {
+
+      ACTF("Recalculating max depth due to duplicates...");
+
+      q = queue;
+      max_depth = 0;
+
+      while (q) {
+
+          if (q->depth > max_depth) max_depth = q->depth;
+          q = q->next;
+
+      }
+
+  }
+
   OKF("All test cases processed.");
 
 }
