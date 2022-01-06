@@ -355,12 +355,19 @@ def validate_args(args):
         output_dir_path = args.output
     else:
         output_dir_path = os.path.join(args.working_dir, args.output)
-    if args.dry_run is False and os.path.isdir(output_dir_path) and os.listdir(output_dir_path):
-        logging.error(
-            '[!] %s already exists, please remove it to avoid data loss.',
-            args.output
-        )
-        return False
+    if args.dry_run is False:
+        if os.path.isdir(output_dir_path) and os.listdir(output_dir_path):
+            logging.error(
+                '[!] %s already exists, please remove it to avoid data loss.',
+                args.output
+            )
+            return False
+        if os.path.lexists(output_dir_path) and not os.path.isdir(output_dir_path):
+            logging.error(
+                '[!] File %s already exists, can\'t create a directory with the same name.',
+                args.output
+            )
+            return False
 
     if not args.static_instr:
         # Make sure we have all the arguments we need
