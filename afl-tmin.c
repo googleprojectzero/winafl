@@ -1039,15 +1039,18 @@ next_del_blksize:
 finalize_all:
 
   SAYF("\n"
+       cGRA "      Finished minimizing : " cRST "%hs\n"
        cGRA "     File size reduced by : " cRST "%0.02f%% (to %u byte%s)\n"
        cGRA "    Characters simplified : " cRST "%0.02f%%\n"
        cGRA "     Number of execs done : " cRST "%u\n"
        cGRA "          Fruitless execs : " cRST "path=%u crash=%u hang=%s%u\n"
-       cGRA "             Elapsed time : " cRST "%f secs\n\n",
+       cGRA "             Elapsed time : " cRST "%.3f secs\n\n",
+       in_file,
        100 - ((double)in_len) * 100 / orig_len, in_len, in_len == 1 ? "" : "s",
        ((double)(alpha_d_total)) * 100 / (in_len ? in_len : 1),
-       total_execs, missed_paths, missed_crashes, missed_hangs ? cLRD : "",
-       missed_hangs, (GetTickCount64() - start_time) / 1000.0);
+       total_execs,
+       missed_paths, missed_crashes, missed_hangs ? cLRD : "", missed_hangs,
+       (GetTickCount64() - start_time) / 1000.0);
 
   if (total_execs > 50 && missed_hangs * 10 > total_execs)
     WARNF(cLRD "Frequent timeouts - results may be skewed." cRST);
