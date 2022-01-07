@@ -150,7 +150,7 @@ def target_offset(opt):
 
 
 def memory_limit(opt):
-    '''Validates that the -m parameter is properly formated, else
+    '''Validates that the -m parameter is properly formatted, else
     raises an ArgumentTypeError exception back to the argparse parser.'''
     if re.match(r'^\d+[TGkM]?$', opt) or opt == 'none':
         return opt
@@ -324,13 +324,6 @@ def validate_args(args):
         )
         return False
 
-    # Another sanity check on the root of output directory
-    if os.path.isdir(os.path.split(args.output)[0]) is False:
-        logging.error(
-            '[!] The output directory %r is not a directory', args.output
-        )
-        return False
-        
     # Another sanity check on the root of crash directory
     if args.crash_dir and os.path.isdir(os.path.split(args.crash_dir)[0]) is False:
         logging.error(
@@ -357,17 +350,24 @@ def validate_args(args):
         logging.error('[!] afl-showmap.exe needs to be in %s.', args.working_dir)
         return False
 
-    # Make sure the output directory doesn't exist yet
+    # Make sure the output directory doesn't exist yet, or exists but is empty
     if os.path.isabs(args.output):
         output_dir_path = args.output
     else:
         output_dir_path = os.path.join(args.working_dir, args.output)
-    if args.dry_run is False and os.path.isdir(output_dir_path):
-        logging.error(
-            '[!] %s already exists, please remove it to avoid data loss.',
-            args.output
-        )
-        return False
+    if args.dry_run is False:
+        if os.path.isdir(output_dir_path) and os.listdir(output_dir_path):
+            logging.error(
+                '[!] %s already exists, please remove it to avoid data loss.',
+                args.output
+            )
+            return False
+        if os.path.lexists(output_dir_path) and not os.path.isdir(output_dir_path):
+            logging.error(
+                '[!] File %s already exists, can\'t create a directory with the same name.',
+                args.output
+            )
+            return False
 
     if not args.static_instr:
         # Make sure we have all the arguments we need
@@ -620,7 +620,7 @@ def run_all_inputs(args, inputs):
 
 
 def find_best_candidates(uniq_tuples, candidates):
-    # Using the same strategy than in afl-cmin, quoting lcamtuf:
+    # Using the same strategy as in afl-cmin, quoting lcamtuf:
     # '''
     # The "best" part is understood simply as the smallest input that
     # includes a particular tuple in its trace. Empirical evidence
@@ -669,7 +669,11 @@ def find_best_candidates(uniq_tuples, candidates):
 
 
 def do_unique_copy(filepaths, dest_dir):
-    os.mkdir(dest_dir)
+    try:
+        os.makedirs(dest_dir)
+    except Exception:
+        if not os.path.isdir(dest_dir):
+            raise
     num_digits = len(str(len(filepaths)-1))
     for i, fpath in enumerate(filepaths):
         filename = os.path.basename(fpath)
@@ -741,12 +745,12 @@ def main(argc, argv):
     print()
     logging.info('[+] Original set was composed of %d files', len(inputs))
     logging.info(
-        '[+] Effective set was composed of %d files (total size %d MB).',
-        effective_len, (totalsize / 1024) / 1024
+        '[+] Effective set was composed of %d files (total size %.2f MB).',
+        effective_len, (totalsize / 1024.) / 1024.
     )
     logging.info(
-        '[+] Narrowed down to %d files (total size %d MB).',
-        len(minset), (minsetsize / 1024) / 1024
+        '[+] Narrowed down to %d files (total size %.2f MB).',
+        len(minset), (minsetsize / 1024.) / 1024.
     )
 
     if args.dry_run is False:
