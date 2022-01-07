@@ -31,7 +31,7 @@ please refer to the original documentation at:
 http://lcamtuf.coredump.cx/afl/
 
 Unfortunately, the original AFL does not work on Windows due to very
-*nix-specific design (e.g. instrumentation, forkserver etc). This project is
+*nix-specific design (e.g. instrumentation, forkserver etc.). This project is
 a fork of AFL that uses different instrumentation approach which works on
 Windows even for black box binary fuzzing.
 
@@ -83,7 +83,7 @@ WinAFL has been successfully used to identify bugs in Windows software, such as 
 | Foxit | [CVE-2019-13330](https://www.zerodayinitiative.com/advisories/ZDI-19-853/), [CVE-2019-13331](https://www.zerodayinitiative.com/advisories/ZDI-19-854/), [CVE-2020-8844](https://www.zerodayinitiative.com/advisories/ZDI-20-200/) | Natnael Samson ([@NattiSamson](https://twitter.com/NattiSamson))
 | Rockwell Automation | [CVE-2020-12034, CVE-2020-12038](https://www.us-cert.gov/ics/advisories/icsa-20-140-01) | [Sharon Brizinov](https://sharonbrizinov.com/) and Amir Preminger of Claroty
 
-(Let me know if you know of any others and I'll include them in the list)
+(Let me know if you know of any others, and I'll include them in the list)
 
 ## Building WinAFL
 
@@ -203,7 +203,7 @@ The target function should do these things during its lifetime:
 
 1. Open the input file. This needs to happen withing the target function so
    that you can read a new input file for each iteration as the input file is
-   rewritten between target function runs).
+   rewritten between target function runs.
 2. Parse it (so that you can measure coverage of file parsing)
 3. Close the input file. This is important because if the input file is
    not closed WinAFL won't be able to rewrite it.
@@ -212,7 +212,7 @@ The target function should do these things during its lifetime:
 
 ## Instrumentation modes
 
-The following documents provide information on using different insrumentation
+The following documents provide information on using different instrumentation
 modes with WinAFL:
 
  - [Dynamic instrumentation using DynamoRIO](https://github.com/googleprojectzero/winafl/blob/master/readme_dr.md)
@@ -233,7 +233,7 @@ WinAFL will attach to the target process, and fuzz it normally. When the target 
 
 ## Sample delivery via shared memory
 
-WinAFL supports delivering samples via shared memory (as opposed to via a file, which is the default). This can be enabled by giving `-s` option to `afl-fuzz.exe`. Shared memory is faster and can avoid some problems with files (e.g. unable to ovewrwrite the sample file because a target maintains a lock on it). 
+WinAFL supports delivering samples via shared memory (as opposed to via a file, which is the default). This can be enabled by giving `-s` option to `afl-fuzz.exe`. Shared memory is faster and can avoid some problems with files (e.g. unable to overwrite the sample file because a target maintains a lock on it). 
 If you are using shared memory for sample delivery then you need to make sure that in your harness you specifically read data from shared memory instead of file. Check a simple harness here:
 
 https://github.com/googleprojectzero/Jackalope/blob/6d92931b2cf614699e2a023254d5ee7e20f6e34b/test.cpp#L41  
@@ -292,13 +292,13 @@ WinAFL's ```custom_net_fuzzer.dll``` allows winAFL to perform network-based appl
   -p port       - port to send data in
   -w msec       - delay in milliseconds before actually start fuzzing
 ```
-For example, if your application receives network packets via UDP protocol at port 7714 you should setup environment variable in the following way: ```set AFL_CUSTOM_DLL_ARGS=-U -p 7714 -a 127.0.0.1 -w 1000 ```
+For example, if your application receives network packets via UDP protocol at port 7714 you should set up the environment variable in the following way: ```set AFL_CUSTOM_DLL_ARGS=-U -p 7714 -a 127.0.0.1 -w 1000 ```
 
 You still need to find target function and make sure that this function receives data from the network, parses it, and returns normally. Also, you can use In App Persistence mode described above if your application runs the target function in a loop by its own.
 
-Additionally, this mode is considered as experimental since we have experienced some problems with stability and performance. However, we found this option very usefull and managed to find several vulnerabilities in network-based applications (e.g. in Kollective Kontiki listed above).
+Additionally, this mode is considered as experimental since we have experienced some problems with stability and performance. However, we found this option very useful and managed to find several vulnerabilities in network-based applications (e.g. in Kollective Kontiki listed above).
 
-There is a second DLL ```custom_winafl_server.dll``` that allows winAFL to act as a server and perform fuzzing of client-based applications. All you need is to setup port to listen on for incoming connections from your target application. The environment variable ```AFL_CUSTOM_DLL_ARGS=<port_id>``` should be used for this purpose.
+There is a second DLL ```custom_winafl_server.dll``` that allows winAFL to act as a server and perform fuzzing of client-based applications. All you need is to set up the port to listen on for incoming connections from your target application. The environment variable ```AFL_CUSTOM_DLL_ARGS=<port_id>``` should be used for this purpose.
 
 #### Note
 
@@ -307,7 +307,7 @@ In case of server fuzzing, if the server socket has the `SO_REUSEADDR` option se
 setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(int));
 ```
 
-To avoid this replace the `SO_REUSEADDR` option by `SO_LINGER` option in the server source code if availabe.
+To avoid this, replace the `SO_REUSEADDR` option by `SO_LINGER` option in the server source code if available.
 ```
 setsockopt(s, SOL_SOCKET, SO_LINGER, (char*)&opt, sizeof(int));
 ```
@@ -354,8 +354,8 @@ A: This can commonly happen for several reasons
    slowdowns. You will be able to see this in the debug log. To
    resolve, select (or write) your target function differently.
  - Your target function does not close the input file properly, which
-   causes WinAFL to kill the process in order to rewrite it. Please refer
-   to 6) for what a target function should look like.
+   causes WinAFL to kill the process in order to rewrite it. Please refer to
+   "How to select a target function" for what a target function should look like.
 
 Q: Can I fuzz DLLs with WinAFL
 A: Yes, if you can write a harness that loads a library and runs some

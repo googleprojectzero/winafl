@@ -354,7 +354,7 @@ def validate_args(args):
     # Regardless of DRIO being used or not, we need afl-showmap.exe
     afl_showmap_path = os.path.join(args.working_dir, 'afl-showmap.exe')
     if not os.path.isfile(afl_showmap_path):
-        logging.error('[!] afl-showmap.exe need to be in %s.', args.working_dir)
+        logging.error('[!] afl-showmap.exe needs to be in %s.', args.working_dir)
         return False
 
     # Make sure the output directory doesn't exist yet
