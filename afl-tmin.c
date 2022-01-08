@@ -722,6 +722,9 @@ static u8 run_target(char** argv, u8* mem, u32 len, u8 first_run) {
   }
   if (result != 'P')
   {
+      if (result == 0) {
+          FATAL("Reading from pipe failed! LE=%lu\n", GetLastError()); // This may happen if the target process crashes before reaching the target function
+      }
 	  FATAL("Unexpected result from pipe! expected 'P', instead received '%c'\n", result);
   }
   //END OF TEMPORARY FIX FOR REGULAR USAGE OF AFL-TMIN
