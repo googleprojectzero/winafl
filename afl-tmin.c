@@ -69,9 +69,11 @@ static u8 *in_file,                   /* Minimizer input test case         */
           *doc_path,                  /* Path to docs                      */
           *at_file;                   /* Substitution string for @@        */
 
-static u8* in_data;                   /* Input data for trimming           */
+static u8 *in_data,                   /* Input data for trimming           */
+          *prev_data;                 /* Data of previous attempt          */
 
 static u32 in_len,                    /* Input data length                 */
+           prev_len,                  /* Data length of previous attempt   */
            orig_cksum,                /* Original checksum                 */
            total_execs,               /* Total number of execs             */
            missed_hangs,              /* Misses due to hangs               */
@@ -319,6 +321,8 @@ static void read_initial_file(void) {
 
   in_len  = st.st_size;
   in_data = ck_alloc_nozero(in_len);
+  prev_len = -1;
+  prev_data = ck_alloc_nozero(in_len);
 
   ck_read(fd, in_data, in_len, in_file);
 
@@ -690,6 +694,12 @@ static u8 run_target(char** argv, u8* mem, u32 len, u8 first_run) {
   char result = 0;
   u8 child_crashed;
   u32 cksum;
+
+  // Skip run if buffer is identical to previous run
+  if ((len == prev_len) && (0 == memcmp(prev_data, mem, len))) return 0;
+
+  prev_len = len;
+  memcpy(prev_data, mem, len);
 
   write_to_file(prog_in, mem, len);
 
