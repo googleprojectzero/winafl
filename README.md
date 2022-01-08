@@ -201,7 +201,7 @@ When you select a target function and fuzz an application the following happens:
 
 The target function should do these things during its lifetime:
 
-1. Open the input file. This needs to happen withing the target function so
+1. Open the input file. This needs to happen within the target function so
    that you can read a new input file for each iteration as the input file is
    rewritten between target function runs.
 2. Parse it (so that you can measure coverage of file parsing)
