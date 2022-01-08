@@ -96,6 +96,9 @@ static u8  crash_mode,                /* Crash-centric mode?               */
            exit_crash,                /* Treat non-zero exit as crash?     */
            edges_only,                /* Ignore hit counts?                */
            exact_mode,                /* Require path match for crashes?   */
+           no_minimize = 0,           /* Skip minimization phase           */
+           no_normalize = 0,          /* Skip normalization phases         */
+           single_pass = 0,           /* Run only a single pass            */
            use_stdin = 1,             /* Use stdin for program input?      */
            drioless = 0;
 
@@ -843,6 +846,7 @@ static void minimize(char** argv) {
    * BLOCK NORMALIZATION *
    ***********************/
 
+  if (no_normalize) goto next_pass;
   set_len    = next_p2(in_len / TMIN_SET_STEPS);
   set_pos    = 0;
 
@@ -893,6 +897,7 @@ next_pass:
    * BLOCK DELETION *
    ******************/
 
+  if (no_minimize) goto alphabet_minimization;
   del_len = next_p2(in_len / TRIM_START_STEPS);
   stage_o_len = in_len;
 
@@ -968,6 +973,8 @@ next_del_blksize:
    * ALPHABET MINIMIZATION *
    *************************/
 
+alphabet_minimization:
+  if (no_normalize) goto finalize_all;
   alpha_size   = 0;
   alpha_del1   = 0;
   syms_removed = 0;
@@ -1047,7 +1054,7 @@ next_del_blksize:
   OKF("Character minimization done, %u byte%s replaced.",
       alpha_del2, alpha_del2 == 1 ? "" : "s");
 
-  if (changed_any) goto next_pass;
+  if (changed_any && !single_pass) goto next_pass;
 
 finalize_all:
 
@@ -1171,7 +1178,10 @@ static void usage(u8* argv0) {
        "Minimization settings:\n\n"
 
        "  -e            - solve for edge coverage only, ignore hit counts\n"
-       "  -x            - treat non-zero exit codes as crashes\n\n"
+       "  -x            - treat non-zero exit codes as crashes\n"
+       "  -N            - only normalize, skip length minimization. Implies -S\n"
+       "  -M            - only minimize length, skip normalization. Implies -S\n"
+       "  -S            - single pass only\n\n"
 
        "Other stuff:\n\n"
 
@@ -1308,7 +1318,7 @@ int main(int argc, char** argv) {
   SAYF("Based on WinAFL " cBRI VERSION cRST " by <ifratric@google.com>\n");
   SAYF("Based on AFL " cBRI VERSION cRST " by <lcamtuf@google.com>\n");
 
-  while ((opt = getopt(argc,argv,"+i:o:f:m:t:B:D:xeQYV")) > 0)
+  while ((opt = getopt(argc,argv,"+i:o:f:m:t:B:D:xeQYVNMS")) > 0)
 
     switch (opt) {
 
@@ -1429,10 +1439,31 @@ int main(int argc, char** argv) {
 
         break;
 
-     case 'V': /* Show version number */
+      case 'V': /* Show version number */
 
         /* Version number has been printed already, just quit. */
         exit(0);
+
+      case 'N':
+
+        if (no_minimize) FATAL("Multiple -N options not supported");
+        if (no_normalize) FATAL("-N and -M mutually exclusive");
+        no_minimize = 1;
+        break;
+
+      case 'M':
+
+        if (no_normalize) FATAL("Multiple -M options not supported");
+        if (no_minimize) FATAL("-N and -M mutually exclusive");
+        no_normalize = 1;
+        break;
+
+      case 'S':
+
+        if (single_pass) FATAL("Multiple -S options not supported");
+        single_pass = 1;
+        break;
+
 
       default:
 
@@ -1444,6 +1475,7 @@ int main(int argc, char** argv) {
   if(!drioless) {
     if(optind == argc || !dynamorio_dir) usage(argv[0]);
   }
+  if (no_normalize || no_minimize) single_pass = 1;
 
   extract_client_params(argc, argv);
   optind++;
