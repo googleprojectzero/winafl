@@ -587,7 +587,16 @@ static void destroy_target_process(int wait_exit) {
   BOOL still_alive = TRUE;
   STARTUPINFO si;
   PROCESS_INFORMATION pi;
+  BOOL no_hang = (wait_exit == -1);
 
+  // Hack, to allow telling this function not to hang.
+  // If the target process is terminating and still has pending I/O, it won't actually finish.
+  //  Calling DisconnectNamedPipe or CloseHandle on the pipe handle may hang indefinitely.
+  //  Skipping those calls might leak the target process (for a while or indefinitely),
+  //  but at least the current process would be allowed to finish.
+  if (wait_exit == -1) {
+    wait_exit = 0;
+  }
   EnterCriticalSection(&critical_section);
 
   if(!child_handle) {
@@ -652,8 +661,10 @@ static void destroy_target_process(int wait_exit) {
   leave:
   //close the pipe
   if(pipe_handle) {
-    DisconnectNamedPipe(pipe_handle);
-    CloseHandle(pipe_handle);
+    if (!no_hang) {
+      DisconnectNamedPipe(pipe_handle);
+      CloseHandle(pipe_handle);
+    }
 
     pipe_handle = NULL;
   }
@@ -765,6 +776,7 @@ static u8 run_target(char** argv, u8* mem, u32 len, u8 first_run) {
 
   if (stop_soon) {
     SAYF(cRST cLRD "\n+++ Minimization aborted by user +++\n" cRST);
+    Sleep(200); // Allow time to dump partial results
     exit(1);
   }
 
@@ -1108,10 +1120,39 @@ static void set_up_environment(void) {
 }
 
 
+/* Handle stop signal (Ctrl-C, etc). */
+
+static void handle_stop_sig(int sig) {
+
+  u8 dump_path[MAX_PATH];
+  DWORD num_read = 0;
+
+  stop_soon = 1;
+
+  destroy_target_process(-1);
+
+  // Dump to a file whatever was achieved so far - even if we're not done
+  strcpy_s(dump_path, MAX_PATH, out_file);
+  strcat_s(dump_path, MAX_PATH, ".dmp");
+
+  write_to_file(dump_path, in_data, in_len);
+
+  ACTF("Dumped partially-minimized file to: %hs", dump_path);
+
+  Sleep(200); // Allow time for other cleanup
+
+  exit(1);
+
+}
+
+
 /* Setup signal handlers, duh. */
 
 static void setup_signal_handlers(void) {
-  // not implemented on Windows
+  signal(SIGINT, handle_stop_sig);
+  //signal(SIGTERM, handle_stop_sig);
+  //signal(SIGBREAK, handle_stop_sig);
+  //signal(SIGABRT, handle_stop_sig);
 }
 
 
@@ -1492,7 +1533,6 @@ int main(int argc, char** argv) {
 
   setup_shm();
   setup_watchdog_timer();
-  setup_signal_handlers();
 
   set_up_environment();
 
@@ -1504,6 +1544,7 @@ int main(int argc, char** argv) {
   SAYF("\n");
 
   read_initial_file();
+  setup_signal_handlers();
 
   ACTF("Performing dry run (mem limit = %llu MB, timeout = %u ms%s)...",
        mem_limit, exec_tmout, edges_only ? ", edges only" : "");
