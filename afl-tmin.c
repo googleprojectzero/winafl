@@ -1246,6 +1246,7 @@ static void usage(u8* argv0) {
 
        "Other stuff:\n\n"
 
+       "  -d            - don't dump partial data on Ctrl+C\n"
        "  -V            - show version number and exit\n\n"
 
        "For additional tips, please consult %s/README.\n\n",
