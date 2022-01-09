@@ -1303,6 +1303,7 @@ int main(int argc, char** argv) {
   s32 opt;
   u8  mem_limit_given = 0, timeout_given = 0;
   char** use_argv;
+  errno_t status;
 
   start_time = GetTickCount64();
   doc_path = "docs";
@@ -1338,6 +1339,12 @@ int main(int argc, char** argv) {
 
         if (out_file) FATAL("Multiple -o options not supported");
         out_file = optarg;
+        status = _access_s(out_file, 2); // Check writability
+        if (status != 0 && GetLastError() != ERROR_FILE_NOT_FOUND)
+        {
+            if (status == ENOENT && GetLastError() == ERROR_PATH_NOT_FOUND) FATAL("Output folder doesn't exist");
+            FATAL("Output path not writable. status=%d, LE=%lu", status, GetLastError());
+        }
         break;
 
       case 'f':
