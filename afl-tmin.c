@@ -99,6 +99,7 @@ static u8  crash_mode,                /* Crash-centric mode?               */
            no_minimize = 0,           /* Skip minimization phase           */
            no_normalize = 0,          /* Skip normalization phases         */
            single_pass = 0,           /* Run only a single pass            */
+           dump_on_abort = 1,         /* Dump partial results to a file on Ctrl+C */
            use_stdin = 1,             /* Use stdin for program input?      */
            drioless = 0;
 
@@ -1131,14 +1132,15 @@ static void handle_stop_sig(int sig) {
 
   destroy_target_process(-1);
 
-  // Dump to a file whatever was achieved so far - even if we're not done
-  strcpy_s(dump_path, MAX_PATH, out_file);
-  strcat_s(dump_path, MAX_PATH, ".dmp");
+  if (dump_on_abort) {
+    // Dump to a file whatever was achieved so far - even if we're not done
+    strcpy_s(dump_path, MAX_PATH, out_file);
+    strcat_s(dump_path, MAX_PATH, ".dmp");
 
-  write_to_file(dump_path, in_data, in_len);
+    write_to_file(dump_path, in_data, in_len);
 
-  ACTF("Dumped partially-minimized file to: %hs", dump_path);
-
+    ACTF("Dumped partially-minimized file to: %hs", dump_path);
+  }
   Sleep(200); // Allow time for other cleanup
 
   exit(1);
@@ -1360,7 +1362,7 @@ int main(int argc, char** argv) {
   SAYF("Based on WinAFL " cBRI VERSION cRST " by <ifratric@google.com>\n");
   SAYF("Based on AFL " cBRI VERSION cRST " by <lcamtuf@google.com>\n");
 
-  while ((opt = getopt(argc,argv,"+i:o:f:m:t:B:D:xeQYVNMS")) > 0)
+  while ((opt = getopt(argc,argv,"+i:o:f:m:t:B:D:xeQYVNMSd")) > 0)
 
     switch (opt) {
 
@@ -1510,6 +1512,12 @@ int main(int argc, char** argv) {
 
         if (single_pass) FATAL("Multiple -S options not supported");
         single_pass = 1;
+        break;
+
+      case 'd':
+
+        if (!dump_on_abort) FATAL("Multiple -d options not supported");
+        dump_on_abort = 0;
         break;
 
 
