@@ -984,7 +984,7 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 {
     drreg_options_t ops = {sizeof(ops), 2 /*max slots needed: aflags*/, false};
 
-    dr_set_client_name("WinAFL", "");
+    dr_set_client_name("WinAFL", "https://github.com/googleprojectzero/winafl/issues");
 
     drmgr_init();
     drx_init();
