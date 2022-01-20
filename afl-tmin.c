@@ -619,7 +619,7 @@ static void destroy_target_process(int wait_exit) {
     ZeroMemory( &pi, sizeof(pi) );
 
     if(!CreateProcess(NULL, kill_cmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
-      FATAL("CreateProcess failed, GLE=%d.\n", GetLastError());
+      FATAL("CreateProcess(drconfig) failed, GLE=%d.\n", GetLastError());
     }
 
     CloseHandle(pi.hProcess);
@@ -639,7 +639,7 @@ static void destroy_target_process(int wait_exit) {
     kill_cmd = alloc_printf("taskkill /PID %d /F", child_pid);
 
     if(!CreateProcess(NULL, kill_cmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
-      FATAL("CreateProcess failed, GLE=%d.\n", GetLastError());
+      FATAL("CreateProcess(taskkill) failed, GLE=%d.\n", GetLastError());
     }
 
     CloseHandle(pi.hProcess);
