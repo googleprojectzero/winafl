@@ -756,7 +756,7 @@ static u8 run_target(char** argv, u8* mem, u32 len, u8 first_run) {
   if (result != 'P')
   {
       if (result == 0) {
-          FATAL("Reading from pipe failed! LE=%lu\n", GetLastError()); // This may happen if the target process crashes before reaching the target function
+          FATAL("Reading from pipe failed! GLE=%lu\n", GetLastError()); // This may happen if the target process crashes before reaching the target function
       }
 	  FATAL("Unexpected result from pipe! expected 'P', instead received '%c'\n", result);
   }
@@ -1246,7 +1246,6 @@ static void usage(u8* argv0) {
 
        "Other stuff:\n\n"
 
-       "  -d            - don't dump partial data on Ctrl+C\n"
        "  -V            - show version number and exit\n\n"
 
        "For additional tips, please consult %s/README.\n\n",
@@ -1381,7 +1380,7 @@ int main(int argc, char** argv) {
   SAYF("Based on WinAFL " cBRI VERSION cRST " by <ifratric@google.com>\n");
   SAYF("Based on AFL " cBRI VERSION cRST " by <lcamtuf@google.com>\n");
 
-  while ((opt = getopt(argc,argv,"+i:o:f:m:t:B:D:xeQYVNMSd")) > 0)
+  while ((opt = getopt(argc,argv,"+i:o:f:m:t:B:D:xeQYVNMS")) > 0)
 
     switch (opt) {
 
@@ -1405,7 +1404,7 @@ int main(int argc, char** argv) {
         if (status != 0 && GetLastError() != ERROR_FILE_NOT_FOUND)
         {
             if (status == ENOENT && GetLastError() == ERROR_PATH_NOT_FOUND) FATAL("Output folder doesn't exist");
-            FATAL("Output path not writable. status=%d, LE=%lu", status, GetLastError());
+            FATAL("Output path not writable. status=%d, GLE=%lu", status, GetLastError());
         }
         break;
 
@@ -1533,12 +1532,6 @@ int main(int argc, char** argv) {
         single_pass = 1;
         break;
 
-      case 'd':
-
-        if (!dump_on_abort) FATAL("Multiple -d options not supported");
-        dump_on_abort = 0;
-        break;
-
 
       default:
 
@@ -1558,6 +1551,7 @@ int main(int argc, char** argv) {
   if (getenv("AFL_NO_SINKHOLE")) sinkhole_stds = 0;
   if (getenv("AFL_TMIN_EXACT")) exact_mode = 1;
   if (getenv("AFL_TMIN_ALLOW_KILL_FAIL")) allow_kill_fail = 1;
+  if (getenv("AFL_TMIN_DONT_DUMP_ON_ABORT")) dump_on_abort = 0;
 
   setup_shm();
   setup_watchdog_timer();
