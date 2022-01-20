@@ -96,7 +96,6 @@ static u8  crash_mode,                /* Crash-centric mode?               */
            exit_crash,                /* Treat non-zero exit as crash?     */
            edges_only,                /* Ignore hit counts?                */
            exact_mode,                /* Require path match for crashes?   */
-           allow_kill_fail = 0,       /* Continue even if killing target process failed */
            no_minimize = 0,           /* Skip minimization phase           */
            no_normalize = 0,          /* Skip normalization phases         */
            single_pass = 0,           /* Run only a single pass            */
@@ -590,7 +589,6 @@ static void destroy_target_process(int wait_exit) {
   STARTUPINFO si;
   PROCESS_INFORMATION pi;
   BOOL no_hang = (wait_exit == -1);
-  BOOL wait_for_termination = 1;
 
   // Hack, to allow telling this function not to hang.
   // If the target process is terminating and still has pending I/O, it won't actually finish.
@@ -621,24 +619,16 @@ static void destroy_target_process(int wait_exit) {
     ZeroMemory( &pi, sizeof(pi) );
 
     if(!CreateProcess(NULL, kill_cmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
-      if (allow_kill_fail) {
-        BADF("CreateProcess(drconfig) failed, GLE=%d.\n", GetLastError());
-      } else {
-        FATAL("CreateProcess(drconfig) failed, GLE=%d.\n", GetLastError());
-      }
-      wait_for_termination = 0;
-    } else {
-      CloseHandle(pi.hProcess);
-      CloseHandle(pi.hThread);
+      FATAL("CreateProcess failed, GLE=%d.\n", GetLastError());
     }
+
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
 
     ck_free(kill_cmd);
   }
 
-  if (wait_for_termination) {
-    still_alive = WaitForSingleObject(child_handle, 2000) == WAIT_TIMEOUT;
-  }
-  wait_for_termination = 1;
+  still_alive = WaitForSingleObject(child_handle, 2000) == WAIT_TIMEOUT;
 
   if(still_alive) {
     //wait until the child process exits
@@ -649,24 +639,16 @@ static void destroy_target_process(int wait_exit) {
     kill_cmd = alloc_printf("taskkill /PID %d /F", child_pid);
 
     if(!CreateProcess(NULL, kill_cmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
-      if (allow_kill_fail) {
-        BADF("CreateProcess(taskkill) failed, GLE=%d.\n", GetLastError());
-        BADF("Cannot kill child process\n");
-      } else {
-        FATAL("CreateProcess(taskkill) failed, GLE=%d.\n", GetLastError());
-      }
-      wait_for_termination = 0;
-    } else {
-      CloseHandle(pi.hProcess);
-      CloseHandle(pi.hThread);
+      FATAL("CreateProcess failed, GLE=%d.\n", GetLastError());
     }
+
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
 
     ck_free(kill_cmd);
 
-    if (wait_for_termination) {
-      if(WaitForSingleObject(child_handle, 20000) == WAIT_TIMEOUT) {
-        FATAL("Cannot kill child process\n");
-      }
+    if(WaitForSingleObject(child_handle, 20000) == WAIT_TIMEOUT) {
+      FATAL("Cannot kill child process\n");
     }
   }
 
@@ -1550,7 +1532,6 @@ int main(int argc, char** argv) {
 
   if (getenv("AFL_NO_SINKHOLE")) sinkhole_stds = 0;
   if (getenv("AFL_TMIN_EXACT")) exact_mode = 1;
-  if (getenv("AFL_TMIN_ALLOW_KILL_FAIL")) allow_kill_fail = 1;
   if (getenv("AFL_TMIN_DONT_DUMP_ON_ABORT")) dump_on_abort = 0;
 
   setup_shm();
