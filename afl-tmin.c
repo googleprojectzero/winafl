@@ -69,9 +69,11 @@ static u8 *in_file,                   /* Minimizer input test case         */
           *doc_path,                  /* Path to docs                      */
           *at_file;                   /* Substitution string for @@        */
 
-static u8* in_data;                   /* Input data for trimming           */
+static u8 *in_data,                   /* Input data for trimming           */
+          *prev_data;                 /* Data of previous attempt          */
 
 static u32 in_len,                    /* Input data length                 */
+           prev_len,                  /* Data length of previous attempt   */
            orig_cksum,                /* Original checksum                 */
            total_execs,               /* Total number of execs             */
            missed_hangs,              /* Misses due to hangs               */
@@ -94,6 +96,10 @@ static u8  crash_mode,                /* Crash-centric mode?               */
            exit_crash,                /* Treat non-zero exit as crash?     */
            edges_only,                /* Ignore hit counts?                */
            exact_mode,                /* Require path match for crashes?   */
+           no_minimize = 0,           /* Skip minimization phase           */
+           no_normalize = 0,          /* Skip normalization phases         */
+           single_pass = 0,           /* Run only a single pass            */
+           dump_on_abort = 1,         /* Dump partial results to a file on Ctrl+C */
            use_stdin = 1,             /* Use stdin for program input?      */
            drioless = 0;
 
@@ -319,6 +325,8 @@ static void read_initial_file(void) {
 
   in_len  = st.st_size;
   in_data = ck_alloc_nozero(in_len);
+  prev_len = -1;
+  prev_data = ck_alloc_nozero(in_len);
 
   ck_read(fd, in_data, in_len, in_file);
 
@@ -580,7 +588,16 @@ static void destroy_target_process(int wait_exit) {
   BOOL still_alive = TRUE;
   STARTUPINFO si;
   PROCESS_INFORMATION pi;
+  BOOL no_hang = (wait_exit == -1);
 
+  // Hack, to allow telling this function not to hang.
+  // If the target process is terminating and still has pending I/O, it won't actually finish.
+  //  Calling DisconnectNamedPipe or CloseHandle on the pipe handle may hang indefinitely.
+  //  Skipping those calls might leak the target process (for a while or indefinitely),
+  //  but at least the current process would be allowed to finish.
+  if (wait_exit == -1) {
+    wait_exit = 0;
+  }
   EnterCriticalSection(&critical_section);
 
   if(!child_handle) {
@@ -602,7 +619,7 @@ static void destroy_target_process(int wait_exit) {
     ZeroMemory( &pi, sizeof(pi) );
 
     if(!CreateProcess(NULL, kill_cmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
-      FATAL("CreateProcess failed, GLE=%d.\n", GetLastError());
+      FATAL("CreateProcess(drconfig) failed, GLE=%d.\n", GetLastError());
     }
 
     CloseHandle(pi.hProcess);
@@ -622,7 +639,7 @@ static void destroy_target_process(int wait_exit) {
     kill_cmd = alloc_printf("taskkill /PID %d /F", child_pid);
 
     if(!CreateProcess(NULL, kill_cmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
-      FATAL("CreateProcess failed, GLE=%d.\n", GetLastError());
+      FATAL("CreateProcess(taskkill) failed, GLE=%d.\n", GetLastError());
     }
 
     CloseHandle(pi.hProcess);
@@ -645,8 +662,10 @@ static void destroy_target_process(int wait_exit) {
   leave:
   //close the pipe
   if(pipe_handle) {
-    DisconnectNamedPipe(pipe_handle);
-    CloseHandle(pipe_handle);
+    if (!no_hang) {
+      DisconnectNamedPipe(pipe_handle);
+      CloseHandle(pipe_handle);
+    }
 
     pipe_handle = NULL;
   }
@@ -691,6 +710,12 @@ static u8 run_target(char** argv, u8* mem, u32 len, u8 first_run) {
   u8 child_crashed;
   u32 cksum;
 
+  // Skip run if buffer is identical to previous run
+  if ((len == prev_len) && (0 == memcmp(prev_data, mem, len))) return 0;
+
+  prev_len = len;
+  memcpy(prev_data, mem, len);
+
   write_to_file(prog_in, mem, len);
 
   if(!is_child_running()) {
@@ -712,6 +737,9 @@ static u8 run_target(char** argv, u8* mem, u32 len, u8 first_run) {
   }
   if (result != 'P')
   {
+      if (result == 0) {
+          FATAL("Reading from pipe failed! GLE=%lu\n", GetLastError()); // This may happen if the target process crashes before reaching the target function
+      }
 	  FATAL("Unexpected result from pipe! expected 'P', instead received '%c'\n", result);
   }
   //END OF TEMPORARY FIX FOR REGULAR USAGE OF AFL-TMIN
@@ -749,6 +777,7 @@ static u8 run_target(char** argv, u8* mem, u32 len, u8 first_run) {
 
   if (stop_soon) {
     SAYF(cRST cLRD "\n+++ Minimization aborted by user +++\n" cRST);
+    Sleep(200); // Allow time to dump partial results
     exit(1);
   }
 
@@ -830,6 +859,7 @@ static void minimize(char** argv) {
    * BLOCK NORMALIZATION *
    ***********************/
 
+  if (no_normalize) goto next_pass;
   set_len    = next_p2(in_len / TMIN_SET_STEPS);
   set_pos    = 0;
 
@@ -880,6 +910,7 @@ next_pass:
    * BLOCK DELETION *
    ******************/
 
+  if (no_minimize) goto alphabet_minimization;
   del_len = next_p2(in_len / TRIM_START_STEPS);
   stage_o_len = in_len;
 
@@ -955,6 +986,8 @@ next_del_blksize:
    * ALPHABET MINIMIZATION *
    *************************/
 
+alphabet_minimization:
+  if (no_normalize) goto finalize_all;
   alpha_size   = 0;
   alpha_del1   = 0;
   syms_removed = 0;
@@ -1034,20 +1067,23 @@ next_del_blksize:
   OKF("Character minimization done, %u byte%s replaced.",
       alpha_del2, alpha_del2 == 1 ? "" : "s");
 
-  if (changed_any) goto next_pass;
+  if (changed_any && !single_pass) goto next_pass;
 
 finalize_all:
 
   SAYF("\n"
+       cGRA "      Finished minimizing : " cRST "%hs\n"
        cGRA "     File size reduced by : " cRST "%0.02f%% (to %u byte%s)\n"
        cGRA "    Characters simplified : " cRST "%0.02f%%\n"
        cGRA "     Number of execs done : " cRST "%u\n"
        cGRA "          Fruitless execs : " cRST "path=%u crash=%u hang=%s%u\n"
-       cGRA "             Elapsed time : " cRST "%f secs\n\n",
+       cGRA "             Elapsed time : " cRST "%.3f secs\n\n",
+       in_file,
        100 - ((double)in_len) * 100 / orig_len, in_len, in_len == 1 ? "" : "s",
        ((double)(alpha_d_total)) * 100 / (in_len ? in_len : 1),
-       total_execs, missed_paths, missed_crashes, missed_hangs ? cLRD : "",
-       missed_hangs, (GetTickCount64() - start_time) / 1000.0);
+       total_execs,
+       missed_paths, missed_crashes, missed_hangs ? cLRD : "", missed_hangs,
+       (GetTickCount64() - start_time) / 1000.0);
 
   if (total_execs > 50 && missed_hangs * 10 > total_execs)
     WARNF(cLRD "Frequent timeouts - results may be skewed." cRST);
@@ -1085,10 +1121,40 @@ static void set_up_environment(void) {
 }
 
 
+/* Handle stop signal (Ctrl-C, etc). */
+
+static void handle_stop_sig(int sig) {
+
+  u8 dump_path[MAX_PATH];
+  DWORD num_read = 0;
+
+  stop_soon = 1;
+
+  destroy_target_process(-1);
+
+  if (dump_on_abort) {
+    // Dump to a file whatever was achieved so far - even if we're not done
+    strcpy_s(dump_path, MAX_PATH, out_file);
+    strcat_s(dump_path, MAX_PATH, ".dmp");
+
+    write_to_file(dump_path, in_data, in_len);
+
+    ACTF("Dumped partially-minimized file to: %hs", dump_path);
+  }
+  Sleep(200); // Allow time for other cleanup
+
+  exit(1);
+
+}
+
+
 /* Setup signal handlers, duh. */
 
 static void setup_signal_handlers(void) {
-  // not implemented on Windows
+  signal(SIGINT, handle_stop_sig);
+  //signal(SIGTERM, handle_stop_sig);
+  //signal(SIGBREAK, handle_stop_sig);
+  //signal(SIGABRT, handle_stop_sig);
 }
 
 
@@ -1155,7 +1221,10 @@ static void usage(u8* argv0) {
        "Minimization settings:\n\n"
 
        "  -e            - solve for edge coverage only, ignore hit counts\n"
-       "  -x            - treat non-zero exit codes as crashes\n\n"
+       "  -x            - treat non-zero exit codes as crashes\n"
+       "  -N            - only normalize, skip length minimization. Implies -S\n"
+       "  -M            - only minimize length, skip normalization. Implies -S\n"
+       "  -S            - single pass only\n\n"
 
        "Other stuff:\n\n"
 
@@ -1277,6 +1346,7 @@ int main(int argc, char** argv) {
   s32 opt;
   u8  mem_limit_given = 0, timeout_given = 0;
   char** use_argv;
+  errno_t status;
 
   start_time = GetTickCount64();
   doc_path = "docs";
@@ -1292,7 +1362,7 @@ int main(int argc, char** argv) {
   SAYF("Based on WinAFL " cBRI VERSION cRST " by <ifratric@google.com>\n");
   SAYF("Based on AFL " cBRI VERSION cRST " by <lcamtuf@google.com>\n");
 
-  while ((opt = getopt(argc,argv,"+i:o:f:m:t:B:D:xeQYV")) > 0)
+  while ((opt = getopt(argc,argv,"+i:o:f:m:t:B:D:xeQYVNMS")) > 0)
 
     switch (opt) {
 
@@ -1312,6 +1382,12 @@ int main(int argc, char** argv) {
 
         if (out_file) FATAL("Multiple -o options not supported");
         out_file = optarg;
+        status = _access_s(out_file, 2); // Check writability
+        if (status != 0 && GetLastError() != ERROR_FILE_NOT_FOUND)
+        {
+            if (status == ENOENT && GetLastError() == ERROR_PATH_NOT_FOUND) FATAL("Output folder doesn't exist");
+            FATAL("Output path not writable. status=%d, GLE=%lu", status, GetLastError());
+        }
         break;
 
       case 'f':
@@ -1413,10 +1489,31 @@ int main(int argc, char** argv) {
 
         break;
 
-     case 'V': /* Show version number */
+      case 'V': /* Show version number */
 
         /* Version number has been printed already, just quit. */
         exit(0);
+
+      case 'N':
+
+        if (no_minimize) FATAL("Multiple -N options not supported");
+        if (no_normalize) FATAL("-N and -M mutually exclusive");
+        no_minimize = 1;
+        break;
+
+      case 'M':
+
+        if (no_normalize) FATAL("Multiple -M options not supported");
+        if (no_minimize) FATAL("-N and -M mutually exclusive");
+        no_normalize = 1;
+        break;
+
+      case 'S':
+
+        if (single_pass) FATAL("Multiple -S options not supported");
+        single_pass = 1;
+        break;
+
 
       default:
 
@@ -1428,16 +1525,17 @@ int main(int argc, char** argv) {
   if(!drioless) {
     if(optind == argc || !dynamorio_dir) usage(argv[0]);
   }
+  if (no_normalize || no_minimize) single_pass = 1;
 
   extract_client_params(argc, argv);
   optind++;
 
   if (getenv("AFL_NO_SINKHOLE")) sinkhole_stds = 0;
   if (getenv("AFL_TMIN_EXACT")) exact_mode = 1;
+  if (getenv("AFL_TMIN_DONT_DUMP_ON_ABORT")) dump_on_abort = 0;
 
   setup_shm();
   setup_watchdog_timer();
-  setup_signal_handlers();
 
   set_up_environment();
 
@@ -1449,6 +1547,7 @@ int main(int argc, char** argv) {
   SAYF("\n");
 
   read_initial_file();
+  setup_signal_handlers();
 
   ACTF("Performing dry run (mem limit = %llu MB, timeout = %u ms%s)...",
        mem_limit, exec_tmout, edges_only ? ", edges only" : "");
