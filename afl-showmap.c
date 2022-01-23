@@ -294,8 +294,7 @@ static u32 write_results(void) {
 
   } else {
 
-    _unlink(out_file); /* Ignore errors */
-    fd = _open(out_file, O_WRONLY | O_CREAT | O_EXCL, DEFAULT_PERMISSION);
+    fd = _open(out_file, O_WRONLY | O_CREAT | O_TRUNC, DEFAULT_PERMISSION);
     if (fd < 0) PFATAL("Unable to create '%s'", out_file);
 
   }

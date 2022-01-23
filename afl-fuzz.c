@@ -2956,16 +2956,12 @@ static void write_to_testcase(void* mem, u32 len) {
 
   if (out_file) {
 
-    unlink(out_file); /* Ignore errors. */
-
-    fd = open(out_file, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, DEFAULT_PERMISSION);
+    fd = open(out_file, O_WRONLY | O_BINARY | O_CREAT | O_TRUNC, DEFAULT_PERMISSION);
 
     if (fd < 0) {
       destroy_target_process(0);
       
-	  unlink(out_file); /* Ignore errors. */
-
-	  fd = open(out_file, O_WRONLY | O_BINARY | O_CREAT | O_EXCL, DEFAULT_PERMISSION);
+	  fd = open(out_file, O_WRONLY | O_BINARY | O_CREAT | O_TRUNC, DEFAULT_PERMISSION);
 		
       if (fd < 0) PFATAL("Unable to create '%s'", out_file);
 
@@ -5134,13 +5130,8 @@ write_trimmed:
   if (needs_write) {
 
     s32 fd;
-    int oflag = O_WRONLY | O_BINARY | O_CREAT;
 
-    if (!unlink(q->fname)) {
-        fd = open(q->fname, oflag | O_EXCL, DEFAULT_PERMISSION);
-    } else {
-        fd = open(q->fname, oflag | O_TRUNC, DEFAULT_PERMISSION);
-    }
+    fd = open(q->fname, O_WRONLY | O_BINARY | O_CREAT | O_TRUNC, DEFAULT_PERMISSION);
 
     if (fd < 0) PFATAL("Unable to create '%s'", q->fname);
 
@@ -7664,9 +7655,7 @@ static void setup_stdio_file(void) {
   
   u8* fn = alloc_printf("%s\\.cur_input", out_dir);
 
-  unlink(fn); /* Ignore errors */
-
-  out_fd = open(fn, O_RDWR | O_BINARY | O_CREAT | O_EXCL, DEFAULT_PERMISSION);
+  out_fd = open(fn, O_RDWR | O_BINARY | O_CREAT | O_TRUNC, DEFAULT_PERMISSION);
 
   if (out_fd < 0) PFATAL("Unable to create '%s'", fn);
 
