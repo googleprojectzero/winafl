@@ -120,8 +120,8 @@ static u8  skip_deterministic,        /* Skip deterministic stages?       */
            drioless = 0,              /* Running without DRIO?            */
            drattach = 0;	            /* attaching to a running process   */
            use_intelpt = 0;           /* Running without DRIO?            */
-           custom_dll_defined = 0;    /* Custom DLL path defined ?        */
-           persist_dr_cache = 0;      /* Custom DLL path defined ?        */
+           custom_dll_defined = 0;    /* Custom DLL path defined?         */
+           persist_dr_cache = 0;      /* Enable persisting code caches?   */
            expert_mode = 0;           /* Running in expert mode with DRIO?*/
 
 static s32 out_fd,                    /* Persistent fd for out_file       */
