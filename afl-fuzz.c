@@ -5650,12 +5650,14 @@ static u8 fuzz_one(char** argv) {
    *****************/
 
   // Prefer a custom mutator that accepts the performance score as an energy value.
-  if (dll_mutate_testcase_with_energy_ptr)
+  if (dll_mutate_testcase_with_energy_ptr) {
     if (dll_mutate_testcase_with_energy_ptr(argv, in_buf, len, perf_score, common_fuzz_stuff))
       goto abandon_entry;
-  else if (dll_mutate_testcase_ptr)
+  }
+  else if (dll_mutate_testcase_ptr) {
     if (dll_mutate_testcase_ptr(argv, in_buf, len, common_fuzz_stuff))
       goto abandon_entry;
+  }
 
   /* Skip right away if -d is given, if we have done deterministic fuzzing on
      this entry ourselves (was_fuzzed), or if it has gone through deterministic
