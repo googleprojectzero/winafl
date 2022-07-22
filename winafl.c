@@ -75,6 +75,9 @@ enum persistence_mode_t { native_mode = 0,	in_app = 1,};
 typedef struct _target_module_t {
     char module_name[MAXIMUM_PATH];
     struct _target_module_t *next;
+    uint exclusion_range_start;
+    uint exclusion_range_end;
+    bool with_exclusion_range;
 } target_module_t;
 
 typedef struct _winafl_option_t {
@@ -291,11 +294,19 @@ instrument_bb_coverage(void *drcontext, void *tag, instrlist_t *bb, instr_t *ins
 
     should_instrument = false;
     target_modules = options.target_modules;
+    uint block_address = (uint)(start_pc - mod_entry->data->start);
     while(target_modules) {
         if(_stricmp(module_name, target_modules->module_name) == 0) {
+            if (target_modules->with_exclusion_range) {
+                if (block_address >= target_modules->exclusion_range_start && block_address <= target_modules->exclusion_range_end)
+                    break;
+            }
             should_instrument = true;
             if(options.debug_mode && debug_information_output == false) {
-                dr_fprintf(winafl_data.log, "Instrumenting %s with the 'bb' mode\n", module_name);
+                if (target_modules->with_exclusion_range)
+                    dr_fprintf(winafl_data.log, "Instrumenting %s with the 'bb' mode with exclusion range from 0x%x to 0x%x\n", module_name, target_modules->exclusion_range_start, target_modules->exclusion_range_end);
+                else
+                    dr_fprintf(winafl_data.log, "Instrumenting %s with the 'bb' mode\n", module_name);
                 debug_information_output = true;
             }
             break;
@@ -900,10 +911,42 @@ options_init(client_id_t id, int argc, const char *argv[])
         }
         else if (strcmp(token, "-coverage_module") == 0) {
             USAGE_CHECK((i + 1) < argc, "missing module");
+            const char *coverage_module = argv[++i];
+            const char *target_module_name;
+
             target_modules = options.target_modules;
             options.target_modules = (target_module_t *)dr_global_alloc(sizeof(target_module_t));
             options.target_modules->next = target_modules;
-            strncpy(options.target_modules->module_name, argv[++i], BUFFER_SIZE_ELEMENTS(options.target_modules->module_name));
+
+            int delimiter_count = 0;
+            const char delimiter[2] = "?";
+            const char * current_pointer = coverage_module;
+            while(current_pointer = strstr(current_pointer, delimiter)) {
+                delimiter_count++;
+                current_pointer++;
+            }
+
+            if (delimiter_count == 3) {
+                char *token;
+                options.target_modules->with_exclusion_range = true;
+
+                token = strtok((char *)coverage_module, delimiter);
+                target_module_name = token;
+
+                token = strtok(NULL, delimiter);
+                options.target_modules->exclusion_range_start = strtoul(token, NULL, 16);
+
+                token = strtok(NULL, delimiter);
+                options.target_modules->exclusion_range_end = strtoul(token, NULL, 16);
+            }
+            else {
+                USAGE_CHECK(delimiter_count == 0, "invalid coverage module exclusion range syntax");
+                target_module_name = coverage_module;
+            }
+
+            strncpy(options.target_modules->module_name, target_module_name, BUFFER_SIZE_ELEMENTS(options.target_modules->module_name));
+
+
         }
         else if (strcmp(token, "-target_module") == 0) {
             USAGE_CHECK((i + 1) < argc, "missing module");
