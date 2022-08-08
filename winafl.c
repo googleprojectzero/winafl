@@ -940,7 +940,7 @@ options_init(client_id_t id, int argc, const char *argv[])
                 options.target_modules->exclusion_range_end = strtoul(token, NULL, 16);
             }
             else {
-                USAGE_CHECK(delimiter_count == 0, "invalid coverage module exclusion range syntax");
+                USAGE_CHECK(delimiter_count > 0, "invalid coverage module exclusion range syntax");
                 target_module_name = coverage_module;
             }
 
