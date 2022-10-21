@@ -83,7 +83,7 @@ WinAFL has been successfully used to identify bugs in Windows software, such as 
 | ACDSee | [CVE-2019-13247](https://github.com/apriorit/pentesting/blob/master/bugs/acdsee/0x00000000000024ed.md), [CVE-2019-13248](https://github.com/apriorit/pentesting/blob/master/bugs/acdsee/0x0000000000002450.md), [CVE-2019-13249](https://github.com/apriorit/pentesting/blob/master/bugs/acdsee/0x00000000000b9e7a.md), [CVE-2019-13250](https://github.com/apriorit/pentesting/blob/master/bugs/acdsee/0x00000000000b9c2f.md), [CVE-2019-13251](https://github.com/apriorit/pentesting/blob/master/bugs/acdsee/0x00000000000c47ff.md), [CVE-2019-13252](https://github.com/apriorit/pentesting/blob/master/bugs/acdsee/0x00000000001172b0.md), [CVE-2019-15293](https://www.apriorit.com/dev-blog/640-qa-fuzzing-for-closed-source-windows-software) | [@expend20](https://twitter.com/expend20) and Anton Kukoba of Apriorit
 | Foxit | [CVE-2019-13330](https://www.zerodayinitiative.com/advisories/ZDI-19-853/), [CVE-2019-13331](https://www.zerodayinitiative.com/advisories/ZDI-19-854/), [CVE-2020-8844](https://www.zerodayinitiative.com/advisories/ZDI-20-200/) | Natnael Samson ([@NattiSamson](https://twitter.com/NattiSamson))
 | Rockwell Automation | [CVE-2020-12034, CVE-2020-12038](https://www.us-cert.gov/ics/advisories/icsa-20-140-01) | [Sharon Brizinov](https://sharonbrizinov.com/) and Amir Preminger of Claroty
-
+| F-Secure & WithSecure | [CVE-2021-33599, CVE-2021-33602, CVE-2021-40836, CVE-2021-40837, CVE-2022-28875, CVE-2022-28876, CVE-2022-28879, CVE-2022-28881, CVE-2022-28882, CVE-2022-28883, CVE-2022-28884, CVE-2022-28886, CVE-2022-28887 ] | [@faty420](https://twitter.com/faty420)
 (Let me know if you know of any others, and I'll include them in the list)
 
 ## Building WinAFL
