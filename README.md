@@ -40,6 +40,7 @@ Windows even for black box binary fuzzing.
 Instead of instrumenting the code at compilation time, WinAFL supports the
 following instrumentation modes:
  - Dynamic instrumentation using DynamoRIO (http://dynamorio.org/)
+ - Dynamic instrumentation using TinyInst (https://github.com/googleprojectzero/TinyInst)
  - Hardware tracing using Intel PT
  - Static instrumentation via Syzygy
 
@@ -111,7 +112,7 @@ source directory).
 ```
 mkdir build32
 cd build32
-cmake -G"Visual Studio 16 2019" -A Win32 .. -DDynamoRIO_DIR=..\path\to\DynamoRIO\cmake -DINTELPT=1
+cmake -G"Visual Studio 16 2019" -A Win32 .. -DDynamoRIO_DIR=C:\path\to\DynamoRIO\cmake -DINTELPT=1
 cmake --build . --config Release
 ```
 
@@ -120,7 +121,7 @@ cmake --build . --config Release
 ```
 mkdir build64
 cd build64
-cmake -G"Visual Studio 16 2019" -A x64 .. -DDynamoRIO_DIR=..\path\to\DynamoRIO\cmake -DINTELPT=1
+cmake -G"Visual Studio 16 2019" -A x64 .. -DDynamoRIO_DIR=C:\path\to\DynamoRIO\cmake -DINTELPT=1
 cmake --build . --config Release
 ```
 
@@ -130,6 +131,9 @@ The following cmake configuration options are supported:
 
  - `-DDynamoRIO_DIR=..\path\to\DynamoRIO\cmake` - Needed to build the
    winafl.dll DynamoRIO client
+
+ - `-DTINYINST=1` - Enable TinyInst mode. For more information see
+   https://github.com/googleprojectzero/winafl/blob/master/readme_tinyinst.md
 
  - `-DINTELPT=1` - Enable Intel PT mode. For more information see
    https://github.com/googleprojectzero/winafl/blob/master/readme_pt.md
@@ -185,7 +189,7 @@ The following afl-fuzz options are supported:
 Please refer to the original AFL documentation for more info on these flags.
 
 To see the supported instrumentation flags, please refer to the documentation
-on the specific instrumentation mode you are interested in.
+on the specific instrumentation mode you are interested in (see "Instrumentation modes" below).
 
 ## How does my target run under WinAFL
 
@@ -219,6 +223,7 @@ The following documents provide information on using different instrumentation
 modes with WinAFL:
 
  - [Dynamic instrumentation using DynamoRIO](https://github.com/googleprojectzero/winafl/blob/master/readme_dr.md)
+ - [Dynamic instrumentation using TinyInst](https://github.com/googleprojectzero/winafl/blob/master/readme_tinyinst.md)
  - [Hardware tracing using Intel PT](https://github.com/googleprojectzero/winafl/blob/master/readme_pt.md)
  - [Static instrumentation via Syzygy](https://github.com/googleprojectzero/winafl/blob/master/readme_syzygy.md)
 

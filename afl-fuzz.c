@@ -64,6 +64,13 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+#ifdef TINYINST
+int tinyinst_init(int argc, char** argv);
+void tinyinst_set_fuzzer_id(char* fuzzer_id);
+int tinyinst_run(char** argv, uint32_t timeout);
+void tinyinst_killtarget();
+#endif
+
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined (__OpenBSD__)
 #  include <sys/sysctl.h>
 #endif /* __APPLE__ || __FreeBSD__ || __OpenBSD__ */
@@ -119,7 +126,8 @@ static u8  skip_deterministic,        /* Skip deterministic stages?       */
            persistent_mode,           /* Running in persistent mode?      */
            drioless = 0,              /* Running without DRIO?            */
            drattach = 0;	            /* attaching to a running process   */
-           use_intelpt = 0;           /* Running without DRIO?            */
+           use_intelpt = 0;           /* Using Intel PT instrumentation   */
+           use_tinyinst = 0;          /* Using TinyInst instrumentation   */
            custom_dll_defined = 0;    /* Custom DLL path defined?         */
            persist_dr_cache = 0;      /* Enable persisting code caches?   */
            expert_mode = 0;           /* Running in expert mode with DRIO?*/
@@ -2592,6 +2600,13 @@ static void destroy_target_process(int wait_exit) {
 	STARTUPINFO si;
 	PROCESS_INFORMATION pi;
 
+#ifdef TINYINST
+  if (use_tinyinst) {
+    tinyinst_killtarget();
+    return;
+  }
+#endif
+
 	EnterCriticalSection(&critical_section);
 
   if (drattach) {
@@ -2824,14 +2839,23 @@ static int process_test_case_into_dll(int fuzz_iterations)
 static u8 run_target(char** argv, u32 timeout) {
 	total_execs++;
 
-    if (dll_run_target_ptr) {
-      return dll_run_target_ptr(argv, timeout, trace_bits, MAP_SIZE);
-    }
+  memset(trace_bits, 0, MAP_SIZE);
+  MemoryBarrier();
+
+  if (dll_run_target_ptr) {
+    return dll_run_target_ptr(argv, timeout, trace_bits, MAP_SIZE);
+  }
 
 #ifdef INTELPT
 	if (use_intelpt) {
 		return run_target_pt(argv, timeout);
 	}
+#endif
+
+#ifdef TINYINST
+  if (use_tinyinst) {
+    return tinyinst_run(argv, timeout);
+  }
 #endif
 
   //todo watchdog timer to detect hangs
@@ -2869,8 +2893,6 @@ static u8 run_target(char** argv, u32 timeout) {
     process_test_case_into_dll(fuzz_iterations_current);
 
   child_timed_out = 0;
-  memset(trace_bits, 0, MAP_SIZE);
-  MemoryBarrier();
   if (fuzz_iterations_current == 0 && init_tmout != 0) {
 	  watchdog_timeout_time = get_cur_time() + init_tmout;
   }
@@ -8169,7 +8191,7 @@ int main(int argc, char** argv) {
   client_params = NULL;
   winafl_dll_path = NULL;
 
-  while ((opt = getopt(argc, argv, "+i:o:f:m:t:I:T:sdYnCB:S:M:x:QD:b:l:pPc:w:A:eV")) > 0)
+  while ((opt = getopt(argc, argv, "+i:o:f:m:t:I:T:sdyYnCB:S:M:x:QD:b:l:pPc:w:A:eV")) > 0)
 
     switch (opt) {
       case 's':
@@ -8379,16 +8401,25 @@ int main(int argc, char** argv) {
 
 		  break;
 
-	  case 'P':
+    case 'P':
 #ifdef INTELPT
-		  use_intelpt = 1;
+      use_intelpt = 1;
 #else
-		  FATAL("afl-fuzz was not compiled with Intel PT support");
+      FATAL("afl-fuzz was not compiled with Intel PT support");
 #endif
 
-		  break;
+      break;
 
-      case 'c':
+    case 'y':
+#ifdef TINYINST
+      use_tinyinst = 1;
+#else
+      FATAL("afl-fuzz was not compiled with TinyInst support");
+#endif
+
+      break;
+
+    case 'c':
 
         if (getenv("AFL_NO_AFFINITY")) FATAL("-c and AFL_NO_AFFINITY are mutually exclusive.");
 
@@ -8416,7 +8447,7 @@ int main(int argc, char** argv) {
 
       case 'e':
         // use WinAFL as a tool to run alongside DynamoRIO
-        if (use_intelpt || drioless) FATAL("Expert mode is only available for DynamoRIO");
+        if (use_intelpt || use_tinyinst || drioless) FATAL("Expert mode is only available for DynamoRIO");
         if (expert_mode) FATAL("Multiple -e options not supported");
         expert_mode = 1;
         break;
@@ -8432,7 +8463,7 @@ int main(int argc, char** argv) {
 
     }
 
-  if (!in_dir || !out_dir || !timeout_given || (!drioless && !dynamorio_dir && !use_intelpt)) usage(argv[0]);
+  if (!in_dir || !out_dir || !timeout_given || (!drioless && !dynamorio_dir && !use_intelpt && !use_tinyinst)) usage(argv[0]);
 
   if (!winafl_dll_path) {
     winafl_dll_path = "winafl.dll";
@@ -8452,6 +8483,12 @@ int main(int argc, char** argv) {
 	  ck_free(modules_dir);
 	  if (!pt_options) usage(argv[0]);
 	  optind += pt_options;
+#endif
+  } else if (use_tinyinst) {
+#ifdef TINYINST
+    int tinyinst_options = tinyinst_init(argc - optind, argv + optind);
+    if (!tinyinst_options) usage(argv[0]);
+    optind += tinyinst_options;
 #endif
   } else {
 	  extract_client_params(argc, argv);
@@ -8501,6 +8538,12 @@ int main(int argc, char** argv) {
 	  trace_bits = VirtualAlloc(0, MAP_SIZE, MEM_COMMIT, PAGE_READWRITE);
   } else {
 	  setup_shm();
+  }
+
+  if (use_tinyinst) {
+#ifdef TINYINST
+    tinyinst_set_fuzzer_id(fuzzer_id);
+#endif
   }
   
   if (use_sample_shared_memory) {

@@ -16,6 +16,14 @@ if (${INTELPT})
   add_subdirectory(third_party/processor-trace)
 endif()
 
+if (${TINYINST})
+    add_definitions(-DTINYINST)
+endif()
+
+if (${TINYINST})
+  add_subdirectory(third_party/TinyInst)
+endif()
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 project(test)
@@ -114,6 +122,20 @@ if (${INTELPT})
 
 endif()
 
+if (${TINYINST})
+  ADD_LIBRARY(winafl_tinyinst STATIC
+    tinyinst_covmap.h
+    tinyinst_covmap.cpp
+    tinyinst_afl.h
+    tinyinst_afl.cpp
+    )
+
+  target_link_libraries(winafl_tinyinst tinyinst)
+  target_link_libraries(winafl_tinyinst "onecore.lib")
+
+endif()
+
+
 project(afl-fuzz)
 
 SET(AFL_FUZZ_SOURCES afl-fuzz.c)
@@ -140,6 +162,10 @@ if (${INTELPT})
   target_link_libraries(afl-fuzz "psapi.lib")
   target_link_libraries(afl-fuzz "Dbghelp.lib")
 
+endif()
+
+if (${TINYINST})
+  target_link_libraries(afl-fuzz winafl_tinyinst)
 endif()
 
 if (NOT "${DynamoRIO_DIR}" STREQUAL "")

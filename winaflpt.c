@@ -1457,8 +1457,6 @@ int run_target_pt(char **argv, uint32_t timeout) {
 		last_ring_buffer_offset = 0;
 	}
 
-	memset(trace_bits, 0, MAP_SIZE);
-
 	dbg_timeout_time = get_cur_time() + timeout;
 
 	// printf("iteration start\n");
