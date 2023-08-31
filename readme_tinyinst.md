@@ -4,7 +4,7 @@ TinyInst is a lightweight dynamic instrumentation library that can be used to in
 
 ## Building and using
 
-To build WinAFL with Intel PT support `-DTINYINST=1` must be added to the build options.
+To build WinAFL with TinyInst support, `-DTINYINST=1` must be added to the build options. For the full building instructions, see the main readme.
 
 Similar to other modes, the usage is
 
