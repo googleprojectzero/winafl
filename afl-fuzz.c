@@ -44,7 +44,7 @@
 #pragma comment(lib, "pdh.lib")
 
 #define VERSION "2.43b"
-#define WINAFL_VERSION "1.16b"
+#define WINAFL_VERSION "1.17"
 
 #include "config.h"
 #include "types.h"
@@ -7489,6 +7489,7 @@ static void usage(u8* argv0) {
         "  -D dir       - directory with DynamoRIO binaries (drrun, drconfig)\n"
         "  -w winafl    - Path to winafl.dll\n"
         "  -P           - use Intel PT tracing mode\n"
+        "  -y           - use TinyInst tracing mode\n"
         "  -Y           - enable the static instrumentation mode\n\n"
 
        "Execution control settings:\n\n"
