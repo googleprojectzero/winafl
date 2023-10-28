@@ -8,7 +8,7 @@
    Copyright 2016 Google Inc. All Rights Reserved.
 
    for the second time i have added some more text
-   for the third time I have added some more text massage
+   for the third time added some text massage.
    this text i have added to create a pull requset
 ```
 
