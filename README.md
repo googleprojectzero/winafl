@@ -8,9 +8,7 @@
    Copyright 2016 Google Inc. All Rights Reserved.
 
    for the second time i have added some more text
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
+   for the third time I have added some more text massage
    this text i have added to create a pull requset
 ```
 
