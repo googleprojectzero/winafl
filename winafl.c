@@ -69,6 +69,10 @@ static uint verbose;
 #define COVERAGE_BB 0
 #define COVERAGE_EDGE 1
 
+#ifndef INOUT
+#define INOUT
+#endif
+
 //fuzz modes
 enum persistence_mode_t { native_mode = 0,	in_app = 1,};
 
