@@ -126,7 +126,7 @@ typedef struct _fuzz_target_t {
 static fuzz_target_t fuzz_target;
 
 typedef struct _debug_data_t {
-    int pre_hanlder_called;
+    int pre_handler_called;
     int post_handler_called;
 } debug_data_t;
 static debug_data_t debug_data;
@@ -492,8 +492,8 @@ pre_loop_start_handler(void *wrapcxt, INOUT void **user_data)
 		}
 	}
 	else {
-		debug_data.pre_hanlder_called++;
-		dr_fprintf(winafl_data.log, "In pre_loop_start_handler: %d\n", debug_data.pre_hanlder_called);
+		debug_data.pre_handler_called++;
+		dr_fprintf(winafl_data.log, "In pre_loop_start_handler: %d\n", debug_data.pre_handler_called);
 	}
 
 	memset(winafl_data.afl_area, 0, MAP_SIZE);
@@ -531,7 +531,7 @@ pre_fuzz_handler(void *wrapcxt, INOUT void **user_data)
             }
         }
     } else {
-        debug_data.pre_hanlder_called++;
+        debug_data.pre_handler_called++;
         dr_fprintf(winafl_data.log, "In pre_fuzz_handler\n");
     }
 
@@ -760,11 +760,11 @@ static void
 event_exit(void)
 {
     if(options.debug_mode) {
-        if(debug_data.pre_hanlder_called == 0) {
+        if(debug_data.pre_handler_called == 0) {
             dr_fprintf(winafl_data.log, "WARNING: Target function was never called. Incorrect target_offset?\n");
         } else if(debug_data.post_handler_called == 0 && options.persistence_mode != in_app) {
             dr_fprintf(winafl_data.log, "WARNING: Post-fuzz handler was never reached. Did the target function return normally?\n");
-        } else if(debug_data.pre_hanlder_called == 1 && options.persistence_mode == in_app) {
+        } else if(debug_data.pre_handler_called == 1 && options.persistence_mode == in_app) {
             dr_fprintf(winafl_data.log, "WARNING: Only hit pre_loop_start_handler once, Is your target function in a loop?\n");
         } else {
             dr_fprintf(winafl_data.log, "Everything appears to be running normally.\n");
@@ -793,7 +793,7 @@ event_init(void)
     memset(winafl_data.afl_area, 0, MAP_SIZE);
 
     if(options.debug_mode) {
-        debug_data.pre_hanlder_called = 0;
+        debug_data.pre_handler_called = 0;
         debug_data.post_handler_called = 0;
 
         winafl_data.log =
