@@ -80,7 +80,7 @@ static u32 in_len,                    /* Input data length                 */
            missed_crashes,            /* Misses due to crashes             */
            missed_paths,              /* Misses due to exec path diffs     */
            exec_tmout = EXEC_TIMEOUT; /* Exec timeout (ms)                 */
-           del_len_limit;             /* Minimum block deletion length     */
+           del_len_limit = 1;         /* Minimum block deletion length     */
 
 static u64 mem_limit = MEM_LIMIT,     /* Memory limit (MB)                 */
            start_time;                /* Tick count at the beginning       */
@@ -911,7 +911,6 @@ next_pass:
   if (no_minimize) goto alphabet_minimization;
   del_len = next_p2(in_len / TRIM_START_STEPS);
   stage_o_len = in_len;
-  if (!del_len_limit) { del_len_limit = 1; }
 
   ACTF(cBRI "Stage #1: " cRST "Removing blocks of data...");
 
@@ -1468,7 +1467,7 @@ int main(int argc, char** argv) {
         if (optarg[0] == '-') FATAL("Dangerously low value of -l");
 
         del_len_limit = atoi(optarg);
-        if (del_len_limit < 1 || del_len_limit >= TMIN_MAX_FILE) FATAL("Value of -l out of range between 1 and TMIN_MAX_FILE");
+        if (del_len_limit < 1 || del_len_limit > TMIN_MAX_FILE) FATAL("Value of -l out of range between 1 and TMIN_MAX_FILE");
 
         break;
 
