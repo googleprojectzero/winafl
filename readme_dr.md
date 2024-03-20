@@ -92,7 +92,7 @@ Example command line:
 ```
 path\to\DynamoRIO\bin64\drrun.exe -c winafl.dll -debug
 -target_module test_gdiplus.exe -target_offset 0x16e0 -fuzz_iterations 10
--nargs 2 -- test_gdiplus.exe input.bmp
+-nargs 2 -- test_gdiplus.exe -f input.bmp
 ```
 
 You should see the output corresponding to your target function being run 10
@@ -133,7 +133,7 @@ An example command line would look like:
 afl-fuzz.exe -i in -o out -D C:\work\winafl\DynamoRIO\bin64 -t 20000 --
 -coverage_module gdiplus.dll -coverage_module WindowsCodecs.dll
 -fuzz_iterations 5000 -target_module test_gdiplus.exe -target_offset 0x16e0
--nargs 2 -- test_gdiplus.exe @@
+-nargs 2 -- test_gdiplus.exe -f @@
 ```
 
 Alternately, if symbols for test_gdiplus.exe are available, you can use
@@ -143,7 +143,7 @@ Alternately, if symbols for test_gdiplus.exe are available, you can use
 afl-fuzz.exe -i in -o out -D C:\work\winafl\DynamoRIO\bin64 -t 20000 --
 -coverage_module gdiplus.dll -coverage_module WindowsCodecs.dll
 -fuzz_iterations 5000 -target_module test_gdiplus.exe -target_method main
--nargs 2 -- test_gdiplus.exe @@
+-nargs 2 -- test_gdiplus.exe -f @@
 ```
 
 That's it. Happy fuzzing!
