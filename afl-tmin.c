@@ -52,6 +52,7 @@ static HANDLE child_handle,
               child_thread_handle;
 static char *dynamorio_dir;
 static char *client_params;
+static char *winafl_dll_path;
 int fuzz_iterations_max = 1, fuzz_iterations_current;
 
 static CRITICAL_SECTION critical_section;
@@ -488,8 +489,8 @@ static void create_target_process(char** argv) {
   } else {
     pidfile = alloc_printf("childpid_%s.txt", fuzzer_id);
     cmd = alloc_printf(
-      "%s\\drrun.exe -pidfile %s -no_follow_children -c winafl.dll %s -fuzz_iterations 1 -fuzzer_id %s -- %s",
-      dynamorio_dir, pidfile, client_params, fuzzer_id, target_cmd
+      "%s\\drrun.exe -pidfile %s -no_follow_children -c %s %s -fuzz_iterations 1 -fuzzer_id %s -- %s",
+      dynamorio_dir, pidfile, winafl_dll_path, client_params, fuzzer_id, target_cmd
     );
   }
 
@@ -1208,6 +1209,7 @@ static void usage(u8* argv0) {
 
        "Instrumentation type:\n\n"
        "  -D dir        - directory with DynamoRIO binaries (drrun, drconfig)\n"
+       "  -w winafl    -  Path to winafl.dll\n"
        "  -Y            - enable the static instrumentation mode\n\n"
 
        "Execution control settings:\n\n"
@@ -1352,6 +1354,7 @@ int main(int argc, char** argv) {
   optind = 1;
   dynamorio_dir = NULL;
   client_params = NULL;
+  winafl_dll_path = NULL;
 
 #ifdef USE_COLOR
   enable_ansi_console();
@@ -1361,7 +1364,7 @@ int main(int argc, char** argv) {
   SAYF("Based on WinAFL " cBRI VERSION cRST " by <ifratric@google.com>\n");
   SAYF("Based on AFL " cBRI VERSION cRST " by <lcamtuf@google.com>\n");
 
-  while ((opt = getopt(argc,argv,"+i:o:f:m:t:B:D:l:xeQYVNMS")) > 0)
+  while ((opt = getopt(argc,argv,"+i:o:w:f:m:t:B:D:l:xeQYVNMS")) > 0)
 
     switch (opt) {
 
@@ -1387,6 +1390,12 @@ int main(int argc, char** argv) {
             if (status == ENOENT && GetLastError() == ERROR_PATH_NOT_FOUND) FATAL("Output folder doesn't exist");
             FATAL("Output path not writable. status=%d, GLE=%lu", status, GetLastError());
         }
+        break;
+
+      case 'w': /* winafl.dll path */
+
+        if (winafl_dll_path) FATAL("Multiple -w options not supported");
+        winafl_dll_path = optarg;
         break;
 
       case 'f':
