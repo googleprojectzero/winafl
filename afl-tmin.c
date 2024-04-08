@@ -52,7 +52,8 @@ static HANDLE child_handle,
               child_thread_handle;
 static char *dynamorio_dir;
 static char *client_params;
-static char *winafl_dll_path = "winafl.dll";
+static char *winafl_dll_path_default = "winafl.dll";
+static char *winafl_dll_path;
 int fuzz_iterations_max = 1, fuzz_iterations_current;
 
 static CRITICAL_SECTION critical_section;
@@ -488,6 +489,9 @@ static void create_target_process(char** argv) {
     ck_free(static_config);
   } else {
     pidfile = alloc_printf("childpid_%s.txt", fuzzer_id);
+    if (winafl_dll_path == NULL) {
+      winafl_dll_path = winafl_dll_path_default;
+    }
     cmd = alloc_printf(
       "%s\\drrun.exe -pidfile %s -no_follow_children -c %s %s -fuzz_iterations 1 -fuzzer_id %s -- %s",
       dynamorio_dir, pidfile, winafl_dll_path, client_params, fuzzer_id, target_cmd
