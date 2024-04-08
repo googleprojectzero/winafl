@@ -52,7 +52,7 @@ static HANDLE child_handle,
               child_thread_handle;
 static char *dynamorio_dir;
 static char *client_params;
-static char *winafl_dll_path;
+static char *winafl_dll_path = "winafl.dll";
 int fuzz_iterations_max = 1, fuzz_iterations_current;
 
 static CRITICAL_SECTION critical_section;
