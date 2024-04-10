@@ -1213,6 +1213,7 @@ static void usage(u8* argv0) {
 
        "Instrumentation type:\n\n"
        "  -D dir        - directory with DynamoRIO binaries (drrun, drconfig)\n"
+       "  -w winafl     - Path to winafl.dll\n"
        "  -Y            - enable the static instrumentation mode\n\n"
 
        "Execution control settings:\n\n"
