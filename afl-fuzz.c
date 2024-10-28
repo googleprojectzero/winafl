@@ -8126,7 +8126,7 @@ void load_custom_library(const char *libname)
 {
   int result = 0;
   SAYF("Loading custom winAFL server library\n");
-  HMODULE hLib = LoadLibraryA(libname);
+  HMODULE hLib = LoadLibraryEx(libname, NULL, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
   if (hLib == NULL)
     FATAL("Unable to load custom server library, GetLastError = 0x%x", GetLastError());
 
