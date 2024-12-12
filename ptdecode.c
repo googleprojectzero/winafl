@@ -449,16 +449,16 @@ tracelet_cache_node *cache_find_node(uint64_t hash, decoder_state *state, unsign
 
 void dump_lut(unsigned char *lut, char *lutname) {
 	printf("unsigned char %s[] = {\n", lutname);
-	for (int i = 0; i<16; i++) {
-		printf("  ");
-		for (int j = 0; j<16; j++) {
-			printf("%02x", lut[i * 16 + j]);
-			if (j != 15) printf(", ");
+	for (int i = 0; i<32; i++) {
+		printf("\t");
+		for (int j = 0; j<8; j++) {
+			printf("0x%02x", lut[i * 8 + j]);
+			if (j != 7) printf(", ");
 		}
-		if (i != 15) printf(",\n");
+		if (i != 31) printf(",\n");
 		else printf("\n");
 	}
-	printf("}; \n\n");
+	printf("};\n\n");
 }
 
 // function that was used to build the lookup tables for the packet decoder
