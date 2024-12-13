@@ -220,19 +220,23 @@ dump_winafl_data()
 
 static bool
 onexception(void *drcontext, dr_exception_t *excpt) {
-    DWORD exception_code = excpt->record->ExceptionCode;
+    EXCEPTION_RECORD *ex_rec = excpt->record;
+    DWORD exception_code = ex_rec->ExceptionCode;
+    DWORD exception_flags = ex_rec->ExceptionFlags;
+    PVOID exception_address = ex_rec->ExceptionAddress;
 
     if(options.debug_mode)
-        dr_fprintf(winafl_data.log, "Exception caught: %x\n", exception_code);
+        dr_fprintf(winafl_data.log, "Exception caught. Code: %x, address: %x\n", exception_code, exception_address);
 
-    if((exception_code == EXCEPTION_ACCESS_VIOLATION) ||
-       (exception_code == EXCEPTION_ILLEGAL_INSTRUCTION) ||
-       (exception_code == EXCEPTION_PRIV_INSTRUCTION) ||
-       (exception_code == EXCEPTION_INT_DIVIDE_BY_ZERO) ||
-       (exception_code == STATUS_HEAP_CORRUPTION) ||
-       (exception_code == EXCEPTION_STACK_OVERFLOW) ||
-       (exception_code == STATUS_STACK_BUFFER_OVERRUN) ||
-       (exception_code == STATUS_FATAL_APP_EXIT)) {
+    if(exception_flags & EXCEPTION_NONCONTINUABLE && 
+       ((exception_code == EXCEPTION_ACCESS_VIOLATION) ||
+        (exception_code == EXCEPTION_ILLEGAL_INSTRUCTION) ||
+        (exception_code == EXCEPTION_PRIV_INSTRUCTION) ||
+        (exception_code == EXCEPTION_INT_DIVIDE_BY_ZERO) ||
+        (exception_code == STATUS_HEAP_CORRUPTION) ||
+        (exception_code == EXCEPTION_STACK_OVERFLOW) ||
+        (exception_code == STATUS_STACK_BUFFER_OVERRUN) ||
+        (exception_code == STATUS_FATAL_APP_EXIT))) {
             if(options.debug_mode) {
                 dr_fprintf(winafl_data.log, "crashed\n");
             } else {
