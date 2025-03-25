@@ -40,6 +40,8 @@ void TinyInstCovMap::SetSHMName(std::string &shm_name) {
 }
 
 void TinyInstCovMap::OnModuleInstrumented(ModuleInfo* module) {
+  TinyInst::OnModuleInstrumented(module);
+
   EnsureSharedMemory();
 }
 
@@ -166,6 +168,8 @@ uint32_t TinyInstCovMap::GetEdgeOffset(ModuleInfo *module1,
 }
 
 void TinyInstCovMap::OnModuleEntered(ModuleInfo *module, size_t entry_address) {
+  TinyInst::OnModuleEntered(module, entry_address);
+
   if (coverage_type == COVTYPE_BB) return;
 
   if (!map_address) return;
