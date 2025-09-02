@@ -912,6 +912,11 @@ options_init(client_id_t id, int argc, const char *argv[])
             else if (strcmp(token, "edge")==0) options.coverage_kind = COVERAGE_EDGE;
             else USAGE_CHECK(false, "invalid coverage type");
         }
+        // Parse this config option, but do nothing with it. The Rust external library will parse it later.
+        else if (strcmp(token, "-pipe") == 0) {
+            USAGE_CHECK((i + 1) < argc, "missing libinject pipe id");
+            argv[++i];
+        }
         else if (strcmp(token, "-coverage_module") == 0) {
             USAGE_CHECK((i + 1) < argc, "missing module");
             target_modules = options.target_modules;
