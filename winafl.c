@@ -62,7 +62,7 @@
 #define STATUS_HEAP_CORRUPTION 0xC0000374
 #endif
 
-extern void libinject_init(unsigned int id);
+extern void libinject_init(unsigned int id, bool fuzzing);
 extern int dump_pcap(void);
 extern void pre_connect(void *wrapcxt, DR_PARAM_OUT void **user_data);
 extern void pre_send(void *wrapcxt, DR_PARAM_OUT void **user_data);
@@ -1009,7 +1009,7 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 
     dr_set_client_name("WinAFL", "https://github.com/googleprojectzero/winafl/issues");
 
-    libinject_init(id);
+    libinject_init(id, true);
 
     dr_fprintf(STDERR, "[stderr] running dr_client_main");
     dr_fprintf(winafl_data.log, "[logfile] running dr_client_main");
