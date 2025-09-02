@@ -62,10 +62,11 @@
 #define STATUS_HEAP_CORRUPTION 0xC0000374
 #endif
 
+extern void libinject_init(unsigned int id);
 extern int dump_pcap(void);
-extern void wrap_pre_connect(void *wrapcxt, DR_PARAM_OUT void **user_data);
-extern void wrap_pre_send(void *wrapcxt, DR_PARAM_OUT void **user_data);
-extern void wrap_pre_recv(void *wrapcxt, DR_PARAM_OUT void **user_data);
+extern void pre_connect(void *wrapcxt, DR_PARAM_OUT void **user_data);
+extern void pre_send(void *wrapcxt, DR_PARAM_OUT void **user_data);
+extern void pre_recv(void *wrapcxt, DR_PARAM_OUT void **user_data);
 
 
 static uint verbose;
@@ -716,13 +717,13 @@ event_module_load(void *drcontext, const module_data_t *info, bool loaded)
     if (_stricmp(module_name, "WS2_32.dll") == 0) {
 
         to_wrap = (app_pc)dr_get_proc_address(info->handle, "connect");
-        bool result = drwrap_wrap(to_wrap,wrap_pre_connect, NULL);
+        bool result = drwrap_wrap(to_wrap,pre_connect, NULL);
 
         to_wrap = (app_pc)dr_get_proc_address(info->handle, "send");
-        result = drwrap_wrap(to_wrap, wrap_pre_send, NULL);
+        result = drwrap_wrap(to_wrap, pre_send, NULL);
 
         to_wrap = (app_pc)dr_get_proc_address(info->handle, "recv");
-        result = drwrap_wrap(to_wrap, wrap_pre_recv, NULL);
+        result = drwrap_wrap(to_wrap, pre_recv, NULL);
     }
 
     if(options.debug_mode && (_stricmp(module_name, "KERNEL32.dll") == 0)) {
@@ -1007,6 +1008,8 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
     drreg_options_t ops = {sizeof(ops), 2 /*max slots needed: aflags*/, false};
 
     dr_set_client_name("WinAFL", "https://github.com/googleprojectzero/winafl/issues");
+
+    libinject_init(id);
 
     dr_fprintf(STDERR, "[stderr] running dr_client_main");
     dr_fprintf(winafl_data.log, "[logfile] running dr_client_main");

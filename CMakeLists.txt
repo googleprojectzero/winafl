@@ -215,18 +215,18 @@ if (NOT "${DynamoRIO_DIR}" STREQUAL "")
   set_directory_properties(PROPERTIES EP_PREFIX ${CMAKE_BINARY_DIR}/Rust)
 
   ExternalProject_Add(
-	  libox
+	  libinject
 	  DOWNLOAD_COMMAND ""
 	  CONFIGURE_COMMAND ""
 	  BUILD_COMMAND cargo build COMMAND cargo build --release
-	  BINARY_DIR "${CMAKE_SOURCE_DIR}/libox"
+	  BINARY_DIR "${CMAKE_SOURCE_DIR}/../libinject"
 	  INSTALL_COMMAND ""
 	  LOG_BUILD ON
 	  BUILD_ALWAYS 1
 	  USES_TERMINAL_BUILD ON
 	)
 
-  add_dependencies(winafl libox)
+  add_dependencies(winafl libinject)
 
     ExternalProject_Add(
 	  mutator
@@ -257,8 +257,8 @@ if (NOT "${DynamoRIO_DIR}" STREQUAL "")
 
   # Specify Example's link libraries
   target_link_libraries(winafl
-	debug "${CMAKE_SOURCE_DIR}/libox/target/debug/libox.lib"
-	optimized "${CMAKE_SOURCE_DIR}/libox/target/release/libox.lib"
+	debug "${CMAKE_SOURCE_DIR}/../target/debug/libinject.lib"
+	optimized "${CMAKE_SOURCE_DIR}/../target/release/libinject.lib"
 	ws2_32 userenv advapi32 ntdll)
 
   set_target_properties(winafl PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
