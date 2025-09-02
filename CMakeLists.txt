@@ -244,9 +244,11 @@ if (NOT "${DynamoRIO_DIR}" STREQUAL "")
 
   # Copy mutator.dll after building
   ExternalProject_Add_Step(mutator copy_dll
+      COMMAND ${CMAKE_COMMAND} -E make_directory
+	  "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/"
       COMMAND ${CMAKE_COMMAND} -E copy_if_different
           "${MUTATOR_RELEASE_DLL}"
-          "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>"
+          "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/$<CONFIG>/"
       DEPENDEES build
       ALWAYS 1
   )
