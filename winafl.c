@@ -62,8 +62,12 @@
 #define STATUS_HEAP_CORRUPTION 0xC0000374
 #endif
 
+// Functions exposed by libinject.
 extern void libinject_init(unsigned int id, bool fuzzing);
 extern void libinject_exit(void);
+extern void emit_fuzz_softstart(void);
+extern void emit_fuzz_softrollback(void);
+extern void emit_fuzz_restart(void);
 extern void pre_connect(void *wrapcxt, DR_PARAM_OUT void **user_data);
 extern void pre_send(void *wrapcxt, DR_PARAM_OUT void **user_data);
 extern void pre_recv(void *wrapcxt, DR_PARAM_OUT void **user_data);
@@ -522,6 +526,8 @@ pre_loop_start_handler(void *wrapcxt, INOUT void **user_data)
 static void
 pre_fuzz_handler(void *wrapcxt, INOUT void **user_data)
 {
+    emit_fuzz_softstart();
+
     char command = 0;
     int i;
     void *drcontext;
@@ -605,8 +611,11 @@ post_fuzz_handler(void *wrapcxt, void *user_data)
     if(fuzz_target.iteration == options.fuzz_iterations) {
         dr_fprintf(winafl_data.log, "Reached Max fuzz iterations, calling dr_exit_process from post_fuzz_handler\n");
         dr_fprintf(STDERR, "Reached Max fuzz iterations, calling dr_exit_process from post_fuzz_handler\n");
+        emit_fuzz_restart();
         dr_exit_process(0);
     }
+
+    emit_fuzz_softrollback();
 
     mc->xsp = fuzz_target.xsp;
     mc->pc = fuzz_target.func_pc;
