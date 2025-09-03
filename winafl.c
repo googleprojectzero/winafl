@@ -63,7 +63,7 @@
 #endif
 
 extern void libinject_init(unsigned int id, bool fuzzing);
-extern int dump_pcap(void);
+extern void libinject_exit(void);
 extern void pre_connect(void *wrapcxt, DR_PARAM_OUT void **user_data);
 extern void pre_send(void *wrapcxt, DR_PARAM_OUT void **user_data);
 extern void pre_recv(void *wrapcxt, DR_PARAM_OUT void **user_data);
@@ -763,11 +763,7 @@ event_module_load(void *drcontext, const module_data_t *info, bool loaded)
 static void
 event_exit(void)
 {
-    dr_fprintf(STDERR, "\n in event exit!");
-    dr_fprintf(STDERR, "\n writing network traffic to file PCAP\n");
-    if (dump_pcap() != 0) {
-        dr_fprintf(STDERR, "\n Error occured while writing network traffic to file PCAP!\n");
-    };
+    libinject_exit();
 
     if(options.debug_mode) {
         if(debug_data.pre_handler_called == 0) {
