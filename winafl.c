@@ -63,7 +63,7 @@
 #endif
 
 // Functions exposed by libinject.
-extern void libinject_init(unsigned int id, bool fuzzing);
+extern void libinject_init(unsigned int id);
 extern void libinject_exit(void);
 extern void emit_fuzz_softstart(void);
 extern void emit_fuzz_softrollback(void);
@@ -1014,7 +1014,7 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 
     dr_set_client_name("WinAFL", "https://github.com/googleprojectzero/winafl/issues");
 
-    libinject_init(id, true);
+    libinject_init(id);
 
     dr_fprintf(STDERR, "[stderr] running dr_client_main");
     dr_fprintf(winafl_data.log, "[logfile] running dr_client_main");
