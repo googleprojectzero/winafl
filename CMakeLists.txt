@@ -1,4 +1,18 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.18) # Upgrade for CMAKE_CUDA_ARCHITECTURES
+
+project(WinAFL_CUDA LANGUAGES C CXX)
+set(CMAKE_CUDA_ARCHITECTURES native)
+
+# CUDA Support - Contributed by Elias Ibrahim <elie.ibrahim@gmail.com> (Feb 2026)
+enable_language(CUDA)
+
+# Check if CUDA is found (enable_language should handle this, but explicit check is good)
+if(NOT CMAKE_CUDA_COMPILER)
+    message(WARNING "CUDA compiler not found! GPU acceleration will be disabled.")
+else()
+    message(STATUS "CUDA compiler found: ${CMAKE_CUDA_COMPILER}")
+    add_definitions(-DHAVE_CUDA)
+endif()
 
 if (${USE_COLOR})
     add_definitions(-DUSE_COLOR)
@@ -10,6 +24,15 @@ endif()
 
 if (${INTELPT})
     add_definitions(-DINTELPT)
+endif()
+
+# CUDA Support
+# CUDA Support - Handled by enable_language(CUDA)
+if (CMAKE_CUDA_COMPILER)
+    add_definitions(-DHAVE_CUDA)
+    include_directories(${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
+else()
+    message(WARNING "CUDA not found, GPU acceleration will be disabled.")
 endif()
 
 if (${INTELPT})
@@ -72,10 +95,6 @@ project(afl-showmap)
 add_executable(afl-showmap
   afl-showmap.c
   )
-
-if (${TINYINST})
-  target_link_libraries(afl-showmap winafl_tinyinst)
-endif()
 
 project(afl-tmin)
 
@@ -144,6 +163,16 @@ project(afl-fuzz)
 
 SET(AFL_FUZZ_SOURCES afl-fuzz.c)
 
+if(CMAKE_CUDA_COMPILER)
+    SET(AFL_FUZZ_SOURCES ${AFL_FUZZ_SOURCES} afl-fuzz-gpu.cu)
+endif()
+
+if(DEFINED GPU_SANDBOX_DIR)
+    add_subdirectory(${GPU_SANDBOX_DIR} gpu_sandbox_build)
+    include_directories(${GPU_SANDBOX_DIR}/include)
+    add_definitions(-DUSE_GPU_SANDBOX)
+endif()
+
 if (${INTELPT})
 
   include_directories(third_party/winipt/inc)
@@ -157,6 +186,14 @@ endif()
 add_executable(afl-fuzz
   ${AFL_FUZZ_SOURCES}
   )
+
+if(DEFINED GPU_SANDBOX_DIR)
+    target_link_libraries(afl-fuzz gpu_sandbox)
+endif()
+
+# if (CMAKE_CUDA_COMPILER)
+#   Target linking is automatic for CUDA sources
+# endif()
 
 if (${INTELPT})
 
