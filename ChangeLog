@@ -2,6 +2,25 @@
 ChangeLog
 =========
 
+----------------------------------
+Version 1.17 (Feb 2026, based on afl 2.43b):
+----------------------------------
+
+  - CUDA GPU Acceleration support (Tier 1 GPU Havoc Mutator).
+    Offloads seed havoc mutations (bitflips, byte arithmetic, block mutations, 
+    and dictionary splicing) to NVIDIA GPU CUDA cores using double-buffered 
+    asynchronous memory streams and hardware CuRand entropy.
+    Contributed by Elias Ibrahim <elie.ibrahim@gmail.com>
+
+  - Added -G / /gpu command-line flags to enable GPU acceleration in afl-fuzz.
+
+  - Added AFL_GPU_BATCH_SIZE environment variable to configure GPU thread batch allocations.
+
+  - Added experimental Tier 2 GPU target execution harness template (experimental/gpu_harness_template.cu).
+
+  - Added target analysis & harness generation utilities (winafl-target-finder.py,
+    winafl-harness-builder.py, ghidra_bridge.py).
+
 -----------------------------------
 Version 1.16b (based on afl 2.43b):
 -----------------------------------
